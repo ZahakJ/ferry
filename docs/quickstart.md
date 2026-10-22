@@ -88,7 +88,7 @@ machine:
 $ ferry get 7-acorn-tulip-otter
 Connected. (both sides see: motto sway)
 Receiving holiday.mp4 (2.1 GB).
-━━━━━━━━━━━━━━━━━━━━━━━━ ↓  64.0%  1.3 GB of 2.1 GB  112.4 MB/s · 7s left
+━━━━━━━━━━━━━━ ↓  64.0%  1.3 GB of 2.1 GB  112.4 MB/s · 7s left
 ✓ Received 2.1 GB in 19s (110.5 MB/s). Checked: every byte matches.
 holiday.mp4
 ```
@@ -113,7 +113,7 @@ the rest.
 ```
 $ ferry get 3-lemon-cider-robin
 Receiving holiday.mp4 (2.1 GB).
-━━━━━━━━━━━━━━━━━━━━━━━━ ↓  71.3%  1.5 GB of 2.1 GB …
+━━━━━━━━━━━━━━ ↓  71.3%  1.5 GB of 2.1 GB …
 ```
 
 Short drops do not even need that: a connection that goes quiet for a few

@@ -97,7 +97,7 @@
 	var total = 2.1;
 
 	function bar(pct) {
-		var w = 24, n = Math.round(pct / 100 * w);
+		var w = 14, n = Math.round(pct / 100 * w);
 		return [["g", "━".repeat(n)], ["d", "━".repeat(w - n)]];
 	}
 

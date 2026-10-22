@@ -177,7 +177,7 @@ func (p *progress) update(done, total int64) {
 		fmt.Fprintln(os.Stderr, line)
 		return
 	}
-	w := 24
+	w := 14
 	fill := int(pct / 100 * float64(w))
 	bar := p.o.green(strings.Repeat("━", fill)) + p.o.dim(strings.Repeat("━", w-fill))
 	fmt.Fprintf(os.Stderr, "\r\033[K%s %s", bar, line)
