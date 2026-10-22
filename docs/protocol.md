@@ -122,7 +122,8 @@ Control messages on `ctl` are JSON objects with a `t` field:
 A piece on a data lane is `0x01 ‖ file index (u32) ‖ offset (u64) ‖
 BLAKE3-128(data) ‖ data`, all big-endian, with 256 KiB of data except at
 the end of a file. The transfer id is `sha256` over the name and the file
-list, so the same files from the same sender resume.
+list (paths, sizes, modes, modification times), so sending the same files
+again resumes.
 
 ## Jobs (designed, not yet built)
 
