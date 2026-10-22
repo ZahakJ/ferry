@@ -30,7 +30,7 @@ type intentReply struct {
 
 func cmdSend(ctx context.Context, o *out, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
-	lanes := fs.Int("lanes", 0, "parallel connections (default from config, 8)")
+	lanes := fs.Int("lanes", 0, "parallel connections (default: by size, up to 16)")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -79,7 +79,10 @@ func cmdSend(ctx context.Context, o *out, args []string) error {
 		}
 		o.say("Connected. %s", o.dim("(both sides see: "+s.SAS+")"))
 		defer s.Close()
-		return sendOver(ctx, o, s, path, m, *lanes)
+		if *lanes == 0 {
+		*lanes = cfg.LanesFor(m.Total)
+	}
+	return sendOver(ctx, o, s, path, m, *lanes)
 	}
 	return sendToContact(ctx, o, to, path, m)
 }

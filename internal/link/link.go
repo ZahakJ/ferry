@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/pion/datachannel"
@@ -58,13 +59,21 @@ type Link struct {
 	Lanes []*Lane
 	// Path describes how traffic flows, e.g. "direct" or "relay (TURN)".
 	Path string
+
+	up        atomic.Bool
+	done      chan struct{}
+	closeOnce sync.Once
 }
+
+// ErrClosed means the link was closed, often because the peer went away.
+var ErrClosed = errors.New("connection closed")
 
 // Lane is one bulk-data channel.
 type Lane struct {
-	DC  *webrtc.DataChannel
-	RW  datachannel.ReadWriteCloser
-	low chan struct{}
+	DC   *webrtc.DataChannel
+	RW   datachannel.ReadWriteCloser
+	low  chan struct{}
+	done chan struct{}
 }
 
 const highWater = 16 << 20
@@ -76,6 +85,8 @@ func (l *Lane) Write(ctx context.Context, b []byte) error {
 		case <-l.low:
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-l.done:
+			return ErrClosed
 		case <-time.After(100 * time.Millisecond):
 		}
 	}
@@ -144,23 +155,23 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 	ctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
 
-	// The dialer picks the number of lanes; the other side follows.
-	if initiator {
-		if err := sig.SendJSON(signal{Type: "lanes", Lane: o.Lanes}); err != nil {
-			return nil, err
-		}
-	} else {
-		var s signal
-		if err := sig.RecvJSON(&s); err != nil {
-			return nil, err
-		}
-		if s.Type != "lanes" || s.Lane < 1 || s.Lane > 32 {
-			return nil, errors.New("unexpected signaling message")
-		}
-		o.Lanes = s.Lane
+	// Each side says how many lanes it wants (the sender knows the size,
+	// the receiver may not); the link uses the larger number.
+	sent := make(chan error, 1)
+	go func() { sent <- sig.SendJSON(signal{Type: "lanes", Lane: o.Lanes}) }()
+	var ls signal
+	if err := sig.RecvJSON(&ls); err != nil {
+		return nil, err
 	}
+	if err := <-sent; err != nil {
+		return nil, err
+	}
+	if ls.Type != "lanes" || ls.Lane < 1 || ls.Lane > 32 {
+		return nil, errors.New("unexpected signaling message")
+	}
+	o.Lanes = max(o.Lanes, ls.Lane)
 
-	l := &Link{}
+	l := &Link{done: make(chan struct{})}
 	cfg := webrtc.Configuration{ICEServers: o.ICEServers}
 	if o.RelayOnly {
 		cfg.ICETransportPolicy = webrtc.ICETransportPolicyRelay
@@ -229,7 +240,7 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 			l.Close()
 			return nil, err
 		}
-		lane := &Lane{DC: dc, low: make(chan struct{}, 1)}
+		lane := &Lane{DC: dc, low: make(chan struct{}, 1), done: l.done}
 		dc.SetBufferedAmountLowThreshold(highWater / 2)
 		dc.OnBufferedAmountLow(func() {
 			select {
@@ -250,6 +261,12 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 		pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 			if s == webrtc.PeerConnectionStateFailed {
 				report(ready{lane: i, err: errors.New("connection failed")})
+				// Once in use, a lane failing means the peer is gone or the
+				// path broke for good: close everything so that blocked reads
+				// and writes return and the transfer can stop (and resume).
+				if l.up.Load() {
+					go l.Close()
+				}
 			}
 		})
 	}
@@ -282,6 +299,7 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 		}
 	}
 	l.Path = path(l.pcs[0])
+	l.up.Store(true)
 	return l, nil
 }
 
@@ -389,15 +407,20 @@ func path(pc *webrtc.PeerConnection) string {
 	return "direct"
 }
 
-// Close tears everything down.
+// Close tears everything down. It is safe to call more than once.
 func (l *Link) Close() error {
+	l.closeOnce.Do(l.close)
+	return nil
+}
+
+func (l *Link) close() {
+	close(l.done)
 	if l.Ctl != nil {
 		l.Ctl.Close()
 	}
 	for _, pc := range l.pcs {
 		pc.Close()
 	}
-	return nil
 }
 
 // SendCtl sends one JSON control message.

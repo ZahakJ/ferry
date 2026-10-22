@@ -21,3 +21,20 @@ UDP socket drops a burst, retransmission timeouts back off to seconds, and
 NewReno regrows the window by one 1191-byte MTU per round trip. Raising the
 growth step and spreading the load over several associations, each of which
 loses and recovers independently, fixes most of it.
+
+## ferry itself, through the harness
+
+`test/harness.sh`: two hosts, each behind its own NAT (nft masquerade),
+connected by a bridge; netem on both NATs' WAN side. Transfers of 1-2 GB by
+code, on the default settings (lanes chosen by size: 16 for these). Both
+ends and both NATs share one 16-core machine, so CPU contention limits the
+unshaped case and numbers vary between runs.
+
+| path | ferry, 8 lanes | ferry, 16 lanes |
+|---|---|---|
+| LAN-like (veth, no shaping) | 2.3-3.3 Gbps | 1.4-3.2 Gbps |
+| 40 ms RTT, no loss | 0.68-1.46 Gbps | 1.4-2.1 Gbps |
+| 40 ms RTT, 0.5% loss | 0.38-0.39 Gbps | 0.65-0.68 Gbps |
+
+Sixteen lanes is the default for transfers of 512 MB and up; smaller ones
+use fewer (at least 2). `ferry config lanes N` fixes the number.

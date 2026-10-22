@@ -125,11 +125,11 @@ unblock_udp() { ns natA nft flush chain ip filter between; }
 ns hostA ping -c1 -W2 203.0.113.1 >/dev/null && ns hostB ping -c1 -W2 203.0.113.1 >/dev/null && ok "both homes reach the internet through NAT" || bad "no route through NAT"
 
 step "rendezvous"
-ns rv env PORT=4001 CONCORD_GUEST_PORT=8080 CONCORD_RELAY_SEED=$(printf 'cd%.0s' $(seq 32)) \
+ip netns exec rv env PORT=4001 CONCORD_GUEST_PORT=8080 CONCORD_RELAY_SEED=$(printf 'cd%.0s' $(seq 32)) \
 	CONCORD_PUBLIC_HOST=203.0.113.1 CONCORD_TURN_SECRET=harness-secret CONCORD_TURN_RELAY_IP=203.0.113.1 \
 	CONCORD_TURN_ALLOW_PRIVATE=1 "$RVBIN" > "$LOG/rv.log" 2>&1 &
 PIDS="$PIDS $!"
-ns rv "$BIN/stund" -l 203.0.113.1:3479 2> "$LOG/stund.log" &
+ip netns exec rv "$BIN/stund" -l 203.0.113.1:3479 2> "$LOG/stund.log" &
 PIDS="$PIDS $!"
 for i in $(seq 100); do grep -q '^PeerID' "$LOG/rv.log" 2>/dev/null && break; sleep 0.1; done
 RVID=$(sed -n 's/^PeerID: //p' "$LOG/rv.log")
@@ -291,6 +291,9 @@ for i in $(seq 1200); do
 	sleep 0.25
 done
 kill -KILL $PB 2>/dev/null; wait $PB 2>/dev/null || true
+# The sender must notice on its own that its peer vanished.
+for i in $(seq 90); do kill -0 $PA 2>/dev/null || break; sleep 1; done
+if kill -0 $PA 2>/dev/null; then bad "sender still running 90 s after the receiver died"; kill $PA; else ok "sender noticed the receiver vanished after ${i} s and stopped"; fi
 wait $PA 2>/dev/null || true
 part=$(stat -c %s "$WORK/in-b/big.bin.ferry-part" 2>/dev/null || echo 0)
 [ "$part" -gt 0 ] && ok "receiver killed at ${n:-0} bytes; partial file kept" || bad "no partial file after kill"
@@ -307,6 +310,24 @@ if $FB get "$C" --to "$WORK/in-b" --json > "$LOG/big2-b.json" 2> "$LOG/big2-b.er
 else bad "resume failed: $(tail -2 "$LOG/big2-b.err")"; fi
 unshape
 rm -f "$WORK/in-b/big.bin"
+fi
+
+if want blip; then
+step "Wi-Fi blip: the line goes dead for 8 s mid-transfer"
+mkfile "$WORK/blip.bin" 1500
+rm -f "$WORK/in-b/blip.bin"
+shape 20ms 0%
+$FA send "$WORK/blip.bin" --json > "$LOG/blip-a.json" 2> "$LOG/blip-a.err" &
+PA=$!
+C=$(codeof "$LOG/blip-a.json")
+$FB get "$C" --to "$WORK/in-b" --json > "$LOG/blip-b.json" 2> "$LOG/blip-b.err" &
+PB=$!
+for i in $(seq 400); do n=$(sed -n 's/.*"bytes":\([0-9]*\).*/\1/p' "$LOG/blip-b.err" | tail -1); [ "${n:-0}" -gt 300000000 ] && break; sleep 0.25; done
+ns natA nft add rule ip filter between drop
+sleep 8
+ns natA nft flush chain ip filter between
+if wait $PB && wait $PA && cmp -s "$WORK/blip.bin" "$WORK/in-b/blip.bin"; then ok "transfer rode out the outage and completed intact"; else bad "transfer did not survive: $(tail -1 "$LOG/blip-b.err")"; fi
+unshape
 fi
 
 if want mcp; then

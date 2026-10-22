@@ -526,7 +526,7 @@ func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Pro
 	if !r.OK {
 		return nil, fmt.Errorf("%s declined: %s", c.Name, r.Why)
 	}
-	l, err := s.Link(ctx, 0)
+	l, err := s.Link(ctx, a.cfg.LanesFor(m.Total))
 	if err != nil {
 		return nil, err
 	}

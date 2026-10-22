@@ -142,7 +142,11 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		o.result("name             %s", name)
 		o.result("rendezvous       %s", cfg.Rendezvous)
 		o.result("rendezvous_http  %s", cfg.RendezvousHTTP)
-		o.result("lanes            %d", cfg.Lanes)
+		lanes := "by size (2-16)"
+		if cfg.Lanes > 0 {
+			lanes = fmt.Sprint(cfg.Lanes)
+		}
+		o.result("lanes            %s", lanes)
 		o.result("%s", o.dim("stored in "+keys.Dir()))
 	}
 	switch len(args) {

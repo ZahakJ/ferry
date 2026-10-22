@@ -29,7 +29,7 @@ type Config struct {
 	RendezvousHTTP string `json:"rendezvous_http,omitempty"`
 	// STUN servers; empty means the default.
 	STUN []string `json:"stun,omitempty"`
-	// Lanes is how many peer connections a transfer uses.
+	// Lanes is how many peer connections a transfer uses; 0 picks by size.
 	Lanes int `json:"lanes,omitempty"`
 
 	// Not saved: test and debug switches.
@@ -40,8 +40,21 @@ type Config struct {
 // DefaultSTUN is used when no STUN server is configured.
 var DefaultSTUN = []string{"stun:stun.l.google.com:19302"}
 
-// DefaultLanes is the number of lanes for a transfer. See docs/throughput.md.
-const DefaultLanes = 8
+// MaxLanes is the most lanes a transfer uses. See docs/throughput.md:
+// on a long, lossy path 16 lanes nearly double what 8 achieve.
+const MaxLanes = 16
+
+// LanesFor picks how many lanes to use for a transfer of total bytes,
+// unless the configuration fixes the number. Small transfers do not need
+// many connections, and each one costs a handshake (and a TURN allocation
+// when relayed).
+func (c *Config) LanesFor(total int64) int {
+	if c.Lanes > 0 {
+		return c.Lanes
+	}
+	n := int(total / (32 << 20))
+	return max(2, min(n, MaxLanes))
+}
 
 func configPath() string { return filepath.Join(keys.Dir(), "config.json") }
 
@@ -90,9 +103,6 @@ func (c *Config) applyEnv() {
 	}
 	if os.Getenv("FERRY_LOOPBACK") != "" {
 		c.Loopback = true
-	}
-	if c.Lanes <= 0 {
-		c.Lanes = DefaultLanes
 	}
 	if c.Lanes > 32 {
 		c.Lanes = 32
