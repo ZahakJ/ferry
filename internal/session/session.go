@@ -347,4 +347,3 @@ func (e *Endpoint) Listen(ctx context.Context, known func() keys.Contacts, handl
 	})
 	return nil
 }
-
