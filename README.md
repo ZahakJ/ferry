@@ -128,9 +128,13 @@ How the numbers were found and what was tuned: [docs/throughput.md](docs/through
 inside a user namespace (no root needed) and checks: pairing; a wrong code
 rejected on both sides; a direct path through both NATs; a plain "no
 direct path" when UDP between them is blocked; a forwarded port through
-strict NATs; no plaintext anywhere on the wire, rendezvous included; a 5 GB transfer killed part
-way and resumed with a matching hash; and two MCP clients exchanging
-messages and a file.
+strict NATs; no plaintext anywhere on the wire, rendezvous included; a
+20 GiB file (`FERRY_HARNESS_BIG=20480`) killed part way over a 40 ms, lossy path and resumed with a
+matching hash; and two MCP clients exchanging messages and a file.
+
+Tested with 20 GiB files. Offsets are 64-bit and nothing holds a whole
+file in memory: during a 20 GiB transfer the sender used under 200 MB of
+RAM and the receiver about 130 MB.
 
 ## License
 

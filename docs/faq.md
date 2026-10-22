@@ -47,6 +47,12 @@ put one machine on a VPN or a tailnet, or, where you control the router,
 forward one UDP port: `ferry config port 40000`. `ferry check` shows what
 your network allows.
 
+### How big can a file be?
+
+As big as the disk at the other end. Tested with 20 GiB files; nothing
+holds a whole file in memory, and each side uses a few hundred megabytes
+at most however large the transfer.
+
 ### What happens if the transfer is interrupted?
 
 Run the same send and get again, with a new code. The receiver keeps

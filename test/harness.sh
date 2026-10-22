@@ -254,16 +254,17 @@ done
 mkfile "$WORK/f.bin" 50
 fwd() { # label, extra env for sam
 	rm -f "$WORK/in-b/f.bin"
-	ns hostB FERRY_HOME=$HB $2 "$BIN/ferry" get --from ana --to "$WORK/in-b" > /dev/null 2> "$LOG/fwd-$1-b.err" &
+	ns hostB env FERRY_HOME=$HB $2 "$BIN/ferry" get --from ana --to "$WORK/in-b" > /dev/null 2> "$LOG/fwd-$1-b.err" &
 	P=$!
 	sleep 2
-	timeout 60 ip netns exec hostA FERRY_HOME=$HA "$BIN/ferry" send sam "$WORK/f.bin" --json > "$LOG/fwd-$1-a.json" 2> "$LOG/fwd-$1-a.err"
+	timeout 60 ip netns exec hostA env FERRY_HOME=$HA "$BIN/ferry" send sam "$WORK/f.bin" --json > "$LOG/fwd-$1-a.json" 2> "$LOG/fwd-$1-a.err"
 	r=$?
 	kill $P 2>/dev/null; wait $P 2>/dev/null
 	return $r
 }
 if fwd none ""; then bad "direct worked without a forward; the NATs are not strict enough to test this"
-else ok "strict NATs: no connection, as expected"; fi
+elif grep -q "no direct path" "$LOG/fwd-none-a.err"; then ok "strict NATs: no direct path, as expected"
+else bad "send failed for another reason: $(tail -1 "$LOG/fwd-none-a.err")"; fi
 ns natB nft "add chain ip nat pre { type nat hook prerouting priority -100; }"
 ns natB nft add rule ip nat pre iifname wan udp dport 40000 dnat to 192.168.20.2:40000
 ns natB nft insert rule ip nat post ip saddr 192.168.20.2 udp sport 40000 snat to 203.0.113.20:40000

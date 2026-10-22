@@ -176,9 +176,9 @@
 		<div class="manifest">
 			<header><span>Manifest</span><span>checked by test/harness.sh</span></header>
 			<ul>
-				<li><strong>Nothing readable on the wire</strong><span>Not even the rendezvous: a sniffer counts zero plaintext across more than 100,000 frames.</span></li>
+				<li><strong>Nothing readable on the wire</strong><span>Not even the rendezvous: a sniffer counts zero plaintext across more than 40,000 frames.</span></li>
 				<li><strong>One guess per code</strong><span>A wrong code is refused on both sides and the code is spent.</span></li>
-				<li><strong>Resumes, verified</strong><span>A 5 GB transfer killed part way resumes where it stopped and arrives with a matching hash.</span></li>
+				<li><strong>Resumes, verified</strong><span>A 20 GiB file killed part way resumes where it stopped and arrives with a matching hash.</span></li>
 				<li><strong>Direct or not at all</strong><span>With no direct path, ferry stops and says so. Your data never passes through a server.</span></li>
 				<li><strong>Nothing runs by itself</strong><span>Messages and files are stored, never executed. Fetched files lose their execute bit.</span></li>
 				<li><strong>No new cryptography</strong><span>CPace, ChaCha20-Poly1305, X25519, Ed25519, DTLS and BLAKE3, from well-known libraries. MIT licensed; read the <a href="docs/security.html">threat model</a>.</span></li>
