@@ -103,6 +103,8 @@ type progress struct {
 	last    time.Time
 	samples []sample
 	done    int64
+	base    int64 // already there when the transfer started (a resume)
+	seen    bool
 	ended   bool
 }
 
@@ -135,6 +137,9 @@ func (p *progress) update(done, total int64) {
 	defer p.o.mu.Unlock()
 	if p.ended {
 		return
+	}
+	if !p.seen {
+		p.seen, p.base = true, done
 	}
 	p.done, p.total = done, total
 	p.samples = append(p.samples, sample{now, done})
@@ -192,7 +197,7 @@ func (p *progress) average() float64 {
 	if d <= 0 {
 		return 0
 	}
-	return float64(p.done) / d
+	return float64(p.done-p.base) / d
 }
 
 // ---- formatting ----
@@ -238,4 +243,12 @@ func clean(s string) string {
 		}
 		return r
 	}, s)
+}
+
+// resumed says where a resumed transfer picked up, for the summary line.
+func (p *progress) resumed() string {
+	if p.base <= 0 {
+		return ""
+	}
+	return "; resumed at " + size(p.base)
 }

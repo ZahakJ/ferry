@@ -109,8 +109,8 @@ func sendOver(ctx context.Context, o *out, s *session.Session, path string, m *x
 		return err
 	}
 	avg := p.average()
-	o.say("%s Sent %s in %s (%s/s, %s).", o.green("✓"), size(m.Total), human(time.Since(p.start)), size(int64(avg)), l.Path)
-	o.event("done", map[string]any{"name": m.Name, "saved_as": saved, "bytes": m.Total, "seconds": time.Since(p.start).Seconds(), "path": l.Path})
+	o.say("%s Sent %s in %s (%s/s, %s%s).", o.green("✓"), size(m.Total), human(time.Since(p.start)), size(int64(avg)), l.Path, p.resumed())
+	o.event("done", map[string]any{"name": m.Name, "saved_as": saved, "bytes": m.Total, "resumed_at": p.base, "seconds": time.Since(p.start).Seconds(), "path": l.Path})
 	return nil
 }
 
@@ -186,10 +186,10 @@ func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error
 	if r, err := filepath.Rel(".", saved); err == nil && !strings.HasPrefix(r, "..") {
 		rel = r
 	}
-	o.say("%s Received %s in %s (%s/s). Checked: every byte matches.", o.green("✓"), size(m.Total), human(time.Since(p.start)), size(int64(p.average())))
+	o.say("%s Received %s in %s (%s/s%s). Checked: every byte matches.", o.green("✓"), size(m.Total), human(time.Since(p.start)), size(int64(p.average())), p.resumed())
 	o.result("%s", rel)
 	abs, _ := filepath.Abs(saved)
-	o.event("done", map[string]any{"saved": abs, "bytes": m.Total, "seconds": time.Since(p.start).Seconds(), "verified": true})
+	o.event("done", map[string]any{"saved": abs, "bytes": m.Total, "resumed_at": p.base, "seconds": time.Since(p.start).Seconds(), "verified": true})
 	return nil
 }
 

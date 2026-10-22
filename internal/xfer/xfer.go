@@ -654,6 +654,14 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	if err := l.SendCtl(reply); err != nil {
 		return "", err
 	}
+	// The first progress report is what was already here, so both sides
+	// can tell a resume from bytes moved now.
+	if err := l.SendCtl(ctl{T: "progress", Bytes: held.Load()}); err != nil {
+		return "", err
+	}
+	if progress != nil {
+		progress(held.Load(), m.Total)
+	}
 
 	errc := make(chan error, len(l.Lanes)+2)
 	fail := func(err error) {
