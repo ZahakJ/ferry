@@ -37,6 +37,8 @@ func init() {
 		{"wait", "[--from contact] [--timeout 10m]", "wait for the next message", cmdWait},
 		{"files", "", "list files contacts have sent to this machine", cmdFiles},
 		{"up", "[--unit]", "stay online in the background so contacts can reach you", cmdUp},
+		{"check", "", "test the connection to the rendezvous, STUN and TURN, and explain the results", cmdCheck},
+		{"mcp", "", "serve ferry as MCP tools on stdio (for Claude Code and other agents)", cmdMCP},
 		{"contacts", "", "list paired contacts", cmdContacts},
 		{"forget", "<contact>", "remove a contact", cmdForget},
 		{"config", "[key [value]]", "show or change settings", cmdConfig},

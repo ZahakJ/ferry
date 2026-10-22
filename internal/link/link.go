@@ -100,9 +100,20 @@ func (o *Options) api() (*webrtc.API, error) {
 	}
 	s.SetIPFilter(func(ip net.IP) bool { return !ip.IsLinkLocalUnicast() })
 	s.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
+	// NATs often drop the first probes of a hole punch, so keep checking
+	// longer, and let a link that started on TURN move to a direct path
+	// once one works (both ends are pion, which supports renomination).
+	s.SetICEMaxBindingRequests(25)
+	if err := s.SetICERenomination(); err != nil {
+		return nil, err
+	}
 	lf := logging.NewDefaultLoggerFactory()
 	lf.DefaultLogLevel = logging.LogLevelError
-	if os.Getenv("FERRY_DEBUG_ICE") != "" {
+	switch os.Getenv("FERRY_DEBUG_ICE") {
+	case "":
+	case "trace":
+		lf.DefaultLogLevel = logging.LogLevelTrace
+	default:
 		lf.DefaultLogLevel = logging.LogLevelDebug
 	}
 	s.LoggerFactory = lf
@@ -444,4 +455,53 @@ func (n bufNet) ListenPacket(network, address string) (net.PacketConn, error) {
 		grow(c)
 	}
 	return c, err
+}
+
+// Candidate is one way this machine could be reached.
+type Candidate struct {
+	Type    string `json:"type"` // host | srflx | relay
+	Address string `json:"address"`
+}
+
+// Gather lists the candidates ICE finds with these options: local
+// addresses, the public address STUN reports, and TURN relay addresses.
+func Gather(ctx context.Context, o Options) ([]Candidate, error) {
+	api, err := o.api()
+	if err != nil {
+		return nil, err
+	}
+	cfg := webrtc.Configuration{ICEServers: o.ICEServers}
+	pc, err := api.NewPeerConnection(cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer pc.Close()
+	var mu sync.Mutex
+	var out []Candidate
+	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
+		if c == nil {
+			return
+		}
+		mu.Lock()
+		out = append(out, Candidate{Type: c.Typ.String(), Address: net.JoinHostPort(c.Address, fmt.Sprint(c.Port))})
+		mu.Unlock()
+	})
+	if _, err := pc.CreateDataChannel("probe", nil); err != nil {
+		return nil, err
+	}
+	off, err := pc.CreateOffer(nil)
+	if err != nil {
+		return nil, err
+	}
+	done := webrtc.GatheringCompletePromise(pc)
+	if err := pc.SetLocalDescription(off); err != nil {
+		return nil, err
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	return out, nil
 }

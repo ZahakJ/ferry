@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	ma "github.com/multiformats/go-multiaddr"
@@ -80,6 +81,9 @@ func (c *Config) applyEnv() {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.Lanes = n
 		}
+	}
+	if v := os.Getenv("FERRY_STUN"); v != "" {
+		c.STUN = strings.Split(v, ",")
 	}
 	if os.Getenv("FERRY_RELAY_ONLY") != "" {
 		c.RelayOnly = true
