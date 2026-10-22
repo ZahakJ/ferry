@@ -7,6 +7,13 @@ exit codes are part of the public interface.
 
 ## [Unreleased]
 
+### Changed
+
+- The rendezvous in `deploy/fly` caps every relayed circuit at 1 MiB and
+  2 minutes (Concord v0.59.1): it carries signaling only, never data.
+- The site has a phone layout for the crossing and the diagram; the README
+  has a banner and an animated demo, drawn by `tools/mediagen`.
+
 ## [0.1.0] - 2026-10-22
 
 First release. Static binaries for Linux and macOS, amd64 and arm64.

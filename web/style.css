@@ -79,7 +79,7 @@ a { color: var(--accent); text-underline-offset: 0.18em; }
 a:hover { text-decoration-thickness: 2px; }
 
 code, pre, kbd { font-family: var(--mono); font-size: 0.88em; }
-:not(pre) > code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+:not(pre) > code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; overflow-wrap: anywhere; }
 pre {
 	background: var(--code-bg);
 	padding: 0.9rem 1.1rem;
@@ -214,12 +214,19 @@ pre {
 .strait .hoist.up { opacity: 1; }
 .strait .crate { opacity: 0; transition: opacity 0.4s; }
 .strait .crate.landed { opacity: 1; }
-.strait .crate text { fill: var(--navy); font: 700 10px var(--mono); }
+.strait .crate text { fill: #0b1f28; font: 700 10px var(--mono); }
 .strait .status { fill: var(--ink-soft); font: 600 12px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-#boat { transition: transform 0.12s linear; }
+.strait .boat { transition: transform 0.12s linear; }
+.strait .scene.narrow { display: none; }
+@media (max-width: 640px) {
+	.strait .scene.wide { display: none; }
+	.strait .scene.narrow { display: block; }
+	.strait .scene.narrow .hoist text { font-size: 15px; }
+	.strait .scene.narrow .crate text { font-size: 14px; }
+}
 @media (prefers-reduced-motion: reduce) {
 	.strait .waves { animation: none; }
-	#boat { transition: none; }
+	.strait .boat { transition: none; }
 }
 
 /* ---- demo terminals, one on each shore ---- */
@@ -293,6 +300,11 @@ section.band p.intro { color: var(--ink-soft); max-width: var(--measure); margin
 
 .diagram { margin: 3rem auto 0; max-width: 56rem; }
 .diagram svg { width: 100%; height: auto; display: block; }
+.diagram .tall { display: none; max-width: 24rem; margin: 0 auto; }
+@media (max-width: 640px) {
+	.diagram .wide { display: none; }
+	.diagram .tall { display: block; }
+}
 .diagram .node { fill: var(--raised); stroke: var(--ink); stroke-width: 1.5; }
 .diagram .label { fill: var(--ink); font: 700 13px var(--sans); }
 .diagram .sub { fill: var(--ink-faint); font: 12px var(--mono); }
@@ -400,7 +412,7 @@ footer a { color: var(--ink-soft); }
 .docs aside a:hover { color: var(--ink); }
 .docs aside a.here { color: var(--ink); font-weight: 700; }
 .docs aside a.here::before { background: var(--accent); border-color: var(--accent); }
-.docs article { max-width: var(--measure); min-width: 0; }
+.docs article { max-width: var(--measure); min-width: 0; overflow-wrap: break-word; }
 .docs article h1 { font: 800 2.6rem/1.05 var(--sans); letter-spacing: -0.04em; margin: 0.2rem 0 1.3rem; }
 .docs article h2 { font: 800 1.45rem/1.25 var(--sans); letter-spacing: -0.02em; margin: 2.6rem 0 0.6rem; }
 .docs article h3 { font: 700 1.08rem/1.3 var(--sans); margin: 1.8rem 0 0.4rem; }
@@ -420,5 +432,4 @@ footer a { color: var(--ink-soft); }
 @media (max-width: 600px) {
 	.shores { font-size: 0.7rem; }
 	.shores .status { display: none; }
-	.strait .hoist text { display: none; }
 }

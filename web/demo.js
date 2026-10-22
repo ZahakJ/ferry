@@ -39,53 +39,74 @@
 
 	// ---- the strait ----
 
+	// Two drawings of the same crossing, one wide and one for phones; each
+	// carries its own geometry in data attributes and both move together.
 	var strait = document.getElementById("strait");
-	var boat = document.getElementById("boat");
-	var wake = document.getElementById("wake");
-	var crate = document.getElementById("crate");
 	var status = document.getElementById("status");
-	var hoists = { l: document.getElementById("hoist-l"), r: document.getElementById("hoist-r") };
 	var flagClass = ["f-yellow", "f-red", "f-blue"];
-	var dock = { from: 214, to: 708 }; // boat x beside each pier
+	var scenes = Array.prototype.map.call(document.querySelectorAll(".scene"), function (svg) {
+		var d = svg.dataset;
+		return {
+			boat: svg.querySelector(".boat"), wake: svg.querySelector(".wake"), crate: svg.querySelector(".crate"),
+			hoists: { l: svg.querySelector(".hoist-l"), r: svg.querySelector(".hoist-r") },
+			from: +d.from, to: +d.to, dy: +d.dy, wakeY: +d.wake,
+			mast: { l: +d.mastL, r: +d.mastR }, top: +d.top, slope: +d.slope, gap: +d.gap, joined: !!d.joined
+		};
+	});
 
 	function sail(pct) {
-		if (!boat) return;
-		var x = dock.from + (dock.to - dock.from) * pct / 100;
-		boat.setAttribute("transform", "translate(" + x.toFixed(1) + " 0)");
-		wake.setAttribute("d", "M214 140 L" + x.toFixed(1) + " 140");
-		strait.classList.toggle("moving", pct > 0 && pct < 100);
+		scenes.forEach(function (s) {
+			var x = s.from + (s.to - s.from) * pct / 100;
+			s.boat.setAttribute("transform", "translate(" + x.toFixed(1) + " " + s.dy + ")");
+			s.wake.setAttribute("d", "M" + s.from + " " + s.wakeY + " L" + x.toFixed(1) + " " + s.wakeY);
+		});
+		if (strait) strait.classList.toggle("moving", pct > 0 && pct < 100);
 	}
 
 	function say(text) { if (status) status.textContent = text; }
 
-	// hoist strings words as pennants on the line from a shore's mast.
+	// hoist strings words as pennants on the line from a shore's mast. On the
+	// narrow drawing the words go in one line under the flags.
 	function hoist(side, words) {
-		var h = hoists[side];
-		if (!h) return;
-		var g = h.querySelector(".flags");
-		while (g.firstChild) g.removeChild(g.firstChild);
-		var x0 = side === "l" ? 40 : 960, dir = side === "l" ? 1 : -1;
-		words.forEach(function (w, i) {
-			var x = x0 + dir * (22 + i * 34), y = 16 + (x - x0) * dir * 0.36;
-			var f = document.createElementNS(SVG, "path");
-			f.setAttribute("class", flagClass[i % 3]);
-			f.setAttribute("d", "M" + (x - 9) + " " + y + " L" + (x + 9) + " " + (y + 6.5) + " L" + x + " " + (y + 22) + " Z");
-			g.appendChild(f);
-			var t = document.createElementNS(SVG, "text");
-			t.setAttribute("x", x);
-			t.setAttribute("y", y + 36);
-			t.setAttribute("text-anchor", "middle");
-			t.textContent = w;
-			g.appendChild(t);
+		scenes.forEach(function (s) {
+			var h = s.hoists[side];
+			var g = h.querySelector(".flags");
+			while (g.firstChild) g.removeChild(g.firstChild);
+			var x0 = s.mast[side], dir = side === "l" ? 1 : -1, lowest = 0;
+			words.forEach(function (w, i) {
+				var x = x0 + dir * (s.gap * 0.65 + i * s.gap), y = s.top + (x - x0) * dir * s.slope;
+				var f = document.createElementNS(SVG, "path");
+				f.setAttribute("class", flagClass[i % 3]);
+				f.setAttribute("d", "M" + (x - 9) + " " + y + " L" + (x + 9) + " " + (y + 6.5) + " L" + x + " " + (y + 22) + " Z");
+				g.appendChild(f);
+				lowest = Math.max(lowest, y + 22);
+				if (!s.joined) g.appendChild(label(x, y + 36, w, "middle"));
+			});
+			if (s.joined && words.length) {
+				g.appendChild(label(x0 + dir * 4, lowest + 20, words.join(" · "), dir > 0 ? "start" : "end"));
+			}
+			h.classList.toggle("up", words.length > 0);
 		});
-		h.classList.toggle("up", words.length > 0);
+	}
+
+	function label(x, y, text, anchor) {
+		var t = document.createElementNS(SVG, "text");
+		t.setAttribute("x", x);
+		t.setAttribute("y", y);
+		t.setAttribute("text-anchor", anchor);
+		t.textContent = text;
+		return t;
+	}
+
+	function land(on) {
+		scenes.forEach(function (s) { s.crate.classList.toggle("landed", on); });
 	}
 
 	function reset() {
 		sail(0);
 		hoist("l", []);
 		hoist("r", []);
-		if (crate) crate.classList.remove("landed");
+		land(false);
 		say("at the pier");
 	}
 
@@ -149,7 +170,7 @@
 			})(p);
 		}
 		out(right, 200, [["g", "✓"], ["", " Received 2.1 GB in 19s (110.5 MB/s). Checked: every byte matches."]]);
-		then(0, function () { if (crate) crate.classList.add("landed"); say("arrived · every byte checked"); });
+		then(0, function () { land(true); say("arrived · every byte checked"); });
 		out(right, 60, [["", "holiday.mp4"]]);
 		out(left, 0, [["g", "✓"], ["", " Sent 2.1 GB in 19s (110.5 MB/s, direct)."]]);
 
