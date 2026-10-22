@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"strings"
 	"time"
@@ -17,6 +18,10 @@ import (
 // cmdCheck tests each thing ferry needs, in the order it needs them, and
 // says plainly what each result means.
 func cmdCheck(ctx context.Context, o *out, args []string) error {
+	args, err := parse(flag.NewFlagSet("check", flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
 	cfg, err := session.LoadConfig()
 	if err != nil {
 		return err

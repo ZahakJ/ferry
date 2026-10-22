@@ -82,6 +82,10 @@ func cmdPair(ctx context.Context, o *out, args []string) error {
 }
 
 func cmdContacts(ctx context.Context, o *out, args []string) error {
+	args, err := parse(flag.NewFlagSet("contacts", flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
 	cs, err := keys.LoadContacts()
 	if err != nil {
 		return err
@@ -107,6 +111,10 @@ func cmdContacts(ctx context.Context, o *out, args []string) error {
 }
 
 func cmdForget(ctx context.Context, o *out, args []string) error {
+	args, err := parse(flag.NewFlagSet("forget", flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
 	if len(args) != 1 {
 		return usagef("usage: ferry forget <contact>")
 	}
@@ -128,6 +136,10 @@ func cmdForget(ctx context.Context, o *out, args []string) error {
 }
 
 func cmdConfig(ctx context.Context, o *out, args []string) error {
+	args, err := parse(flag.NewFlagSet("config", flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
 	cfg, err := session.LoadConfig()
 	if err != nil {
 		return err

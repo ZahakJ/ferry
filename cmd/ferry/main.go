@@ -186,8 +186,18 @@ func usage(o *out) {
 	fmt.Fprintln(os.Stderr, "\nAdd --json to any command for machine-readable output. More: ferry help <command>")
 }
 
+// flagHook, when set, receives each command's flags instead of running it;
+// `ferry help --reference` uses it to document every flag from the code.
+var flagHook func(*flag.FlagSet)
+
+var errReference = errors.New("reference mode")
+
 // parse runs fs over args, allowing flags anywhere, and returns positionals.
 func parse(fs *flag.FlagSet, args []string) ([]string, error) {
+	if flagHook != nil {
+		flagHook(fs)
+		return nil, errReference
+	}
 	fs.SetOutput(new(strings.Builder))
 	var pos []string
 	for {
@@ -206,6 +216,10 @@ func parse(fs *flag.FlagSet, args []string) ([]string, error) {
 }
 
 func cmdVersion(ctx context.Context, o *out, args []string) error {
+	args, err := parse(flag.NewFlagSet("version", flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
 	o.result("ferry %s", version)
 	o.event("version", map[string]any{"version": version})
 	return nil

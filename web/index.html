@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ferry — send files and messages between two machines</title>
+<meta name="description" content="One small command to send big files between your machine and a friend's, fast, encrypted end to end, with no accounts. Also a channel between two Claude Code sessions.">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M4 20h24l-3 6H7z' fill='%230f6e6a'/%3E%3Cpath d='M9 20V12h14v8' fill='none' stroke='%230f6e6a' stroke-width='2.5'/%3E%3Cpath d='M15 12V6h2v6' fill='%230f6e6a'/%3E%3C/svg%3E">
+</head>
+<body>
+
+<header class="wrap top">
+	<a class="mark" href="./">
+		<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 20h24l-3 6H7z" fill="currentColor"/><path d="M9 20V12h14v8" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M15 12V6h2v6" fill="currentColor"/></svg>
+		ferry
+	</a>
+	<nav>
+		<a href="docs/quickstart.html">Docs</a>
+		<a href="docs/pairing.html">How it works</a>
+		<a href="docs/mcp.html">For agents</a>
+		<a href="https://github.com/ZahakJ/ferry">GitHub</a>
+	</nav>
+</header>
+
+<main>
+<section class="wrap hero">
+	<h1>Hand a file to a friend, wherever they are.</h1>
+	<p class="lede">One small command. It goes straight from your machine to theirs, as fast as the line allows, encrypted end to end. No accounts, no port forwarding, nothing to set up.</p>
+	<div class="copy"><code id="cmd">ferry send ./build.tar.zst</code><button type="button" data-copy="cmd" aria-label="Copy command">copy</button></div>
+	<div class="ctas">
+		<a class="btn primary" href="docs/quickstart.html">Get started</a>
+		<a class="btn" href="docs/pairing.html">How it works</a>
+	</div>
+</section>
+
+<section class="wrap" aria-label="A transfer, as it looks on both machines">
+	<div class="demo">
+		<div class="term"><div class="bar"><i></i><i></i><i></i><span>avi@laptop</span></div><pre id="left"></pre></div>
+		<div class="term"><div class="bar"><i></i><i></i><i></i><span>zyad@desktop, 400 km away</span></div><pre id="right"></pre></div>
+	</div>
+	<p class="demo-note">What a transfer looks like on both machines: ferry's own output, with the waiting sped up. <button type="button" id="replay">Play again</button></p>
+</section>
+
+<section class="band" id="how">
+	<div class="wrap">
+		<h2>How it works, in plain words</h2>
+		<p class="intro">Between you and your friend are routers, providers and the server that helps you meet. ferry assumes any of them might be hostile, and builds a private connection from nothing but the short code you read aloud.</p>
+		<ol class="steps">
+			<li><h3>Meet</h3><p>Both machines call out to a rendezvous. The code's number is the meeting place. Its words never leave your machine.</p></li>
+			<li><h3>Agree a key</h3><p>A password key exchange (CPace) turns the words into a long secret key that never crosses the network. A wrong guess burns the code.</p></li>
+			<li><h3>Connect directly</h3><p>Sealed under that key, the machines swap how to reach each other, punch through both routers, and fall back to a relay that only sees ciphertext.</p></li>
+			<li><h3>Move and check</h3><p>The file goes over up to 16 connections at once. Every piece and every file is hashed with BLAKE3 before it gets its name.</p></li>
+		</ol>
+		<div class="diagram" aria-hidden="true">
+			<svg viewBox="0 0 860 230" role="img">
+				<rect class="node" x="20" y="120" width="190" height="78" rx="10"/>
+				<text class="label" x="115" y="152" text-anchor="middle">Your machine</text>
+				<text class="sub" x="115" y="174" text-anchor="middle">behind your router</text>
+				<rect class="node" x="650" y="120" width="190" height="78" rx="10"/>
+				<text class="label" x="745" y="152" text-anchor="middle">Their machine</text>
+				<text class="sub" x="745" y="174" text-anchor="middle">behind theirs</text>
+				<rect class="node" x="335" y="14" width="190" height="66" rx="10"/>
+				<text class="label" x="430" y="42" text-anchor="middle">Rendezvous</text>
+				<text class="sub" x="430" y="62" text-anchor="middle">introduces, sees nothing</text>
+				<path class="meet" d="M150 120 C 200 60, 280 47, 335 47"/>
+				<path class="meet" d="M710 120 C 660 60, 580 47, 525 47"/>
+				<path class="direct" d="M210 172 L650 172"/>
+				<path class="flow" d="M210 172 L650 172"/>
+				<text class="tag" x="430" y="160" text-anchor="middle">encrypted, direct</text>
+				<text class="sub" x="430" y="200" text-anchor="middle">or through a relay that cannot read it</text>
+			</svg>
+		</div>
+		<p style="margin-top:2rem"><a href="docs/pairing.html">The whole story, from first principles →</a></p>
+	</div>
+</section>
+
+<section class="band" id="speed">
+	<div class="wrap split">
+		<div>
+			<h2>Fast on real lines</h2>
+			<p class="intro">One connection over a long, slightly lossy path stalls each time a packet goes missing. ferry spreads the file over many, so the others keep going while one recovers.</p>
+			<p><span class="big">1.6×</span><br><span style="color:var(--ink-soft)">a single TCP stream, on a 40 ms path with 0.5% loss</span></p>
+		</div>
+		<div>
+			<table>
+				<thead><tr><th>path</th><th>ferry</th><th>one TCP stream</th></tr></thead>
+				<tbody>
+					<tr><td>LAN-like, through two NATs</td><td class="num">1.4–3.3 Gbit/s</td><td></td></tr>
+					<tr><td>40 ms round trip</td><td class="num">1.4–2.1 Gbit/s</td><td class="num">0.8 Gbit/s</td></tr>
+					<tr><td>40 ms, 0.5% loss</td><td class="num">0.65 Gbit/s</td><td class="num">0.4 Gbit/s</td></tr>
+				</tbody>
+			</table>
+			<p style="color:var(--ink-faint);font-size:0.85rem">Measured by the test harness: two NATed machines, shaped with netem. <a href="docs/throughput.html">Method and raw numbers</a>.</p>
+		</div>
+	</div>
+</section>
+
+<section class="band" id="agents">
+	<div class="wrap split">
+		<div>
+			<h2>Two Claude Code sessions, one channel</h2>
+			<p class="intro">ferry is also an MCP server. Pair two machines once, add one line, and the Claude Code sessions on them can message each other, wait for replies and hand over files, while the humans read along.</p>
+			<div class="copy"><code id="mcp">claude mcp add ferry -s user -- ferry mcp</code><button type="button" data-copy="mcp" aria-label="Copy command">copy</button></div>
+			<p style="color:var(--ink-soft);margin-top:1.4rem">Everything is a plain command too, with <code>--json</code> output, stable exit codes and a manual written for models: <code>ferry help --llm</code>. What arrives is treated as data, never as orders. <a href="docs/mcp.html">The agent guide →</a></p>
+		</div>
+		<div class="term"><div class="bar"><i></i><i></i><i></i><span>tool calls</span></div><pre><span class="d"># avi's session</span>
+<span class="b">send_message</span> { to: "zyad", type: "request",
+  text: "Pushed fix-resume. Run the integration tests?" }
+<span class="g">→ { via: "direct" }</span>
+<span class="b">wait_for_message</span> { from: "zyad", timeout_seconds: 600 }
+
+<span class="d"># zyad's session</span>
+<span class="b">send_message</span> { to: "avi", text: "All 214 pass. Log attached." }
+<span class="b">send_file</span> { to: "avi", path: "test.log" }
+
+<span class="d"># avi's session</span>
+<span class="g">→ { message: { text: "All 214 pass. Log attached." } }</span></pre></div>
+	</div>
+</section>
+
+<section class="band" id="trust">
+	<div class="wrap">
+		<h2>Built to be trusted</h2>
+		<p class="intro">Every claim on this page is checked by an automated harness that builds two homes behind NATs and a rendezvous with a relay, then watches every packet.</p>
+		<ul class="facts">
+			<li><strong>Nothing readable on the wire</strong><span>Not even the rendezvous or relay: a sniffer counts zero plaintext across 150,000 frames.</span></li>
+			<li><strong>One guess per code</strong><span>A wrong code is refused on both sides and the code is spent.</span></li>
+			<li><strong>Resumes, verified</strong><span>A 5 GB transfer killed part way resumes where it stopped and arrives with a matching hash.</span></li>
+			<li><strong>Nothing runs by itself</strong><span>Messages and files are stored, never executed. Fetched files lose their execute bit.</span></li>
+			<li><strong>No new cryptography</strong><span>CPace, ChaCha20-Poly1305, X25519, Ed25519, DTLS and BLAKE3, from audited libraries.</span></li>
+			<li><strong>Open source, MIT</strong><span>One static Go binary. Read the <a href="docs/security.html">threat model</a>.</span></li>
+		</ul>
+	</div>
+</section>
+</main>
+
+<footer>
+	<div class="wrap">
+		<span>ferry · MIT licence · rendezvous by <a href="https://github.com/ZahakJ/concord">Concord</a></span>
+		<span><a href="docs/quickstart.html">Docs</a> · <a href="docs/cli.html">CLI reference</a> · <a href="https://github.com/ZahakJ/ferry">Source</a></span>
+	</div>
+</footer>
+
+<script src="demo.js"></script>
+</body>
+</html>

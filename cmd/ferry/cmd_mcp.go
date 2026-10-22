@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"flag"
 	"os"
 
 	"github.com/ZahakJ/ferry/internal/agent"
@@ -13,6 +14,10 @@ import (
 // forwards to that agent; otherwise it is the agent for as long as the
 // model's session lasts, and shares itself with shell commands too.
 func cmdMCP(ctx context.Context, o *out, args []string) error {
+	args, err := parse(flag.NewFlagSet("mcp", flag.ContinueOnError), args)
+	if err != nil {
+		return err
+	}
 	cfg, err := session.LoadConfig()
 	if err != nil {
 		return err

@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -12,6 +14,9 @@ func cmdHelp(ctx context.Context, o *out, args []string) error {
 		if a == "--llm" || a == "-llm" {
 			fmt.Print(llmHelp)
 			return nil
+		}
+		if a == "--reference" {
+			return reference(ctx, o)
 		}
 	}
 	if len(args) == 0 {
@@ -27,7 +32,7 @@ func cmdHelp(ctx context.Context, o *out, args []string) error {
 			fmt.Fprintf(os.Stderr, "ferry %s %s\n\n  %s\n", c.name, c.args, c.summary)
 			if d, ok := details[c.name]; ok {
 				fmt.Fprintln(os.Stderr)
-				fmt.Fprintln(os.Stderr, strings.TrimSpace(d))
+				fmt.Fprintln(os.Stderr, strings.Trim(d, "\n"))
 			}
 			return nil
 		}
@@ -136,3 +141,54 @@ OTHER
   ferry mcp                      the same as MCP tools over stdio
   ferry config [key value]       name, rendezvous, rendezvous_http, lanes
 `
+
+// reference prints the CLI reference as Markdown, from the command table,
+// the help texts and each command's real flags. The docs site is built
+// from it, so the two cannot drift apart.
+func reference(ctx context.Context, o *out) error {
+	var b strings.Builder
+	b.WriteString("Every command accepts `--json`: stdout then carries one JSON object per line, ")
+	b.WriteString("each with an `event` field, and progress goes to stderr. Nothing ever prompts.\n\n")
+	for _, c := range commands {
+		if c.name == "help" || c.name == "version" {
+			continue
+		}
+		fmt.Fprintf(&b, "## ferry %s\n\n", c.name)
+		fmt.Fprintf(&b, "```\nferry %s %s\n```\n\n%s.\n\n", c.name, c.args, upperFirst(c.summary))
+		if d, ok := details[c.name]; ok {
+			fmt.Fprintf(&b, "```\n%s\n```\n\n", strings.Trim(d, "\n"))
+		}
+		var flags []*flag.Flag
+		flagHook = func(fs *flag.FlagSet) { fs.VisitAll(func(f *flag.Flag) { flags = append(flags, f) }) }
+		err := c.run(ctx, o, nil)
+		flagHook = nil
+		if !errors.Is(err, errReference) {
+			return fmt.Errorf("command %s does not parse its flags first", c.name)
+		}
+		if len(flags) > 0 {
+			b.WriteString("| flag | default | meaning |\n|---|---|---|\n")
+			for _, f := range flags {
+				def := f.DefValue
+				if def == "" {
+					def = " "
+				}
+				fmt.Fprintf(&b, "| `--%s` | `%s` | %s |\n", f.Name, def, f.Usage)
+			}
+			b.WriteString("\n")
+		}
+	}
+	b.WriteString("## Exit codes\n\n| code | meaning |\n|---|---|\n")
+	for _, l := range strings.Split(strings.TrimSpace(exitCodesHelp), "\n")[1:] {
+		f := strings.Fields(l)
+		fmt.Fprintf(&b, "| %s | %s |\n", f[0], strings.Join(f[1:], " "))
+	}
+	fmt.Print(b.String())
+	return nil
+}
+
+func upperFirst(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
