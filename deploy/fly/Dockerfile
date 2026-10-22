@@ -5,8 +5,8 @@
 # cmd/rendezvous is a main package built on Concord's internal packages, so
 # it cannot be imported from this module; it is built from source instead.
 FROM golang:1.26 AS build
-ARG CONCORD_REF=v0.59.0
-ARG CONCORD_SHA=0897706e28a2babe6fcdc7840afa210c5c0901a2
+ARG CONCORD_REF=v0.59.1
+ARG CONCORD_SHA=770aee6ffca4ff7fedc032ecf7724dd63fe096ef
 RUN git clone --depth 1 --branch "$CONCORD_REF" https://github.com/ZahakJ/concord /src \
  && test "$(git -C /src rev-parse HEAD)" = "$CONCORD_SHA"
 WORKDIR /src

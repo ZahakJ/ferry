@@ -62,5 +62,8 @@ up to 14 days, 200 per recipient.
 
 The node carries only small things: DHT records, signaling and mailbox
 messages. File data goes directly between the two machines and never passes
-through it. The relay service is open to any libp2p client and has no
-byte cap, so set a spending limit on the fly organization.
+through it. The relay service is open to any libp2p client, so `fly.toml`
+caps every relayed circuit at 1 MiB each way and 2 minutes, and each peer
+at 16 circuits at once (`CONCORD_RELAY_*`, Concord v0.59.1 and later).
+Signaling needs a few kilobytes; nobody can push bulk data through. Set a
+spending limit on the fly organization as well.

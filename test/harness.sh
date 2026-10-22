@@ -137,6 +137,9 @@ for i in $(seq 100); do grep -q '^PeerID' "$LOG/rv.log" 2>/dev/null && break; sl
 RVID=$(sed -n 's/^PeerID: //p' "$LOG/rv.log")
 [ -n "$RVID" ] && ok "rendezvous up ($RVID)" || { bad "rendezvous did not start"; cat "$LOG/rv.log"; exit 1; }
 grep -q TURN "$LOG/rv.log" && ok "rendezvous offers TURN (ferry must not use it)" || bad "TURN not enabled: $(grep -i turn "$LOG/rv.log" | head -2)"
+if [ -n "${CONCORD_RELAY_CIRCUIT_BYTES:-}${CONCORD_RELAY_CIRCUIT_DURATION:-}" ]; then
+	grep -q "Relay circuits capped" "$LOG/rv.log" && ok "relay circuits capped: $(sed -n 's/^Relay circuits capped at \(.*\) each.*/\1/p' "$LOG/rv.log")" || bad "CONCORD_RELAY_CIRCUIT_* set but the rendezvous did not cap circuits"
+fi
 
 export FERRY_RENDEZVOUS=/ip4/203.0.113.1/tcp/4001/p2p/$RVID
 export FERRY_STUN=stun:203.0.113.1:3479
@@ -237,7 +240,7 @@ sleep 2
 set +e
 $FA send sam "$WORK/r.bin" > /dev/null 2> "$LOG/nopath-a.err"; ea=$?
 set -e
-kill $P 2>/dev/null; wait $P 2>/dev/null || true
+kill $P 2>/dev/null || true; wait $P 2>/dev/null || true
 [ $ea -eq 4 ] && grep -q "no direct path" "$LOG/nopath-a.err" && ok "direct UDP blocked: send exits 4 and says there is no direct path" || bad "exit $ea: $(head -1 "$LOG/nopath-a.err")"
 [ ! -e "$WORK/in-b/r.bin" ] && ok "no data went any other way" || bad "the file arrived without a direct path"
 unblock_udp
@@ -321,7 +324,7 @@ for i in $(seq 1200); do
 	[ "${n:-0}" -gt "$third" ] && break
 	sleep 0.25
 done
-kill -KILL $PB 2>/dev/null; wait $PB 2>/dev/null || true
+kill -KILL $PB 2>/dev/null || true; wait $PB 2>/dev/null || true
 # The sender must notice on its own that its peer vanished.
 for i in $(seq 90); do kill -0 $PA 2>/dev/null || break; sleep 1; done
 if kill -0 $PA 2>/dev/null; then bad "sender still running 90 s after the receiver died"; kill $PA; else ok "sender noticed the receiver vanished after ${i} s and stopped"; fi
@@ -360,6 +363,26 @@ ns natA nft flush chain ip filter between
 if wait $PB && wait $PA && cmp -s "$WORK/blip.bin" "$WORK/in-b/blip.bin"; then ok "transfer rode out the outage and completed intact"; else bad "transfer did not survive: $(tail -1 "$LOG/blip-b.err")"; fi
 unshape
 fi
+
+# Only when asked for by name: it waits out the relay's 2-minute circuit limit.
+case " $ONLY " in *" longlived "*)
+step "contacts stay reachable past the relay's circuit limit"
+$FB up > "$LOG/ll-b.out" 2>&1 &
+UB=$!
+$FA up > "$LOG/ll-a.out" 2>&1 &
+UA=$!
+sleep 4
+r1=$($FA msg sam "longlived one" 2>&1 || true)
+sleep 130
+r2=$($FA msg sam "longlived two" 2>&1 || true)
+kill $UA $UB 2>/dev/null || true; wait $UA $UB 2>/dev/null || true
+case "$r1|$r2" in
+*delivered*"|"*delivered*) ok "two live messages 130 s apart through the agents, both delivered" ;;
+*) bad "first: $r1 / second: $r2" ;;
+esac
+$FB inbox 2>/dev/null | grep -q "longlived two" && ok "the later one is in sam's inbox" || bad "the later message never arrived"
+;;
+esac
 
 if want mcp; then
 step "MCP: two model clients"

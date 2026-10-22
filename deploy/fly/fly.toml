@@ -8,6 +8,12 @@ primary_region = "iad"
 
 [env]
   PORT = "4001"
+  # ferry relays only signaling through this node: a few kilobytes to set up
+  # a direct connection, never file data. Cap every circuit so the relay
+  # cannot be used as a free bulk pipe (Concord v0.59.1 and later).
+  CONCORD_RELAY_CIRCUIT_BYTES = "1048576"
+  CONCORD_RELAY_CIRCUIT_DURATION = "2m"
+  CONCORD_RELAY_MAX_CIRCUITS = "16"
   # Secrets, set with `fly secrets set`, never here:
   #   CONCORD_RELAY_SEED   32-byte hex; fixes the peer ID every ferry ships with
   #   CONCORD_PUBLIC_HOST  ferry-rdv-zahak.fly.dev; the log then prints the address
