@@ -103,6 +103,7 @@ its own NAT, on one 16-core Linux box; netem shapes the path.
 
 | path | ferry | one TCP stream |
 |---|---|---|
+| loopback, one machine | 2.0 Gbps | |
 | LAN-like, through both NATs | 1.2–3.3 Gbps | |
 | 40 ms round trip | 0.9–2.1 Gbps | 0.8 Gbps |
 | 40 ms round trip, 0.5% loss | 0.64–0.69 Gbps | 0.4 Gbps |
