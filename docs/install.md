@@ -29,14 +29,6 @@ sha256sum --ignore-missing -c SHA256SUMS
 chmod +x ferry-*-linux-amd64 && mv ferry-*-linux-amd64 ~/.local/bin/ferry
 ```
 
-Releases also carry `SHA256SUMS.sig`, a signature over the checksum list
-made with the maintainer's SSH key, which is listed in the repository's
-`allowed_signers` file. To check it as well:
-
-```
-ssh-keygen -Y verify -f allowed_signers -I ferry -n file -s SHA256SUMS.sig < SHA256SUMS
-```
-
 ## With Go
 
 ```

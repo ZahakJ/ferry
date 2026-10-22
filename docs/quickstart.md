@@ -58,7 +58,7 @@ Then ask ferry whether everything it needs is in place:
 $ ferry check
 ✓ identity     none yet; one is made the first time you pair
 ✓ rendezvous   reached in 38ms
-✓ relay slot   granted: contacts can reach this machine for signaling
+✓ signaling    the rendezvous will pass contacts' connection requests to this machine
 ✓ local        192.168.1.20:51833
 ✓ public       81.2.69.160:51833 (from STUN; direct connections are likely)
 ✓ agent        not running (start with `ferry up` to stay reachable)

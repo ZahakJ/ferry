@@ -79,13 +79,21 @@ type Lane struct {
 	RW   datachannel.ReadWriteCloser
 	low  chan struct{}
 	done chan struct{}
+	high uint64 // queue this much, then wait
 }
 
-const highWater = 16 << 20
+// queueBudget is how much all lanes together may have queued and unsent.
+// One lane gets up to 16 MiB, enough to keep a long path full; with many
+// lanes each queues less, so a transfer holds at most about 64 MiB.
+const queueBudget = 64 << 20
+
+func highWater(lanes int) uint64 {
+	return uint64(min(max(queueBudget/max(lanes, 1), 2<<20), 16<<20))
+}
 
 // Write sends one message, waiting while too much is already queued.
 func (l *Lane) Write(ctx context.Context, b []byte) error {
-	for l.DC.BufferedAmount() > highWater {
+	for l.DC.BufferedAmount() > l.high {
 		select {
 		case <-l.low:
 		case <-ctx.Done():
@@ -247,8 +255,8 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 			l.Close()
 			return nil, err
 		}
-		lane := &Lane{DC: dc, low: make(chan struct{}, 1), done: l.done}
-		dc.SetBufferedAmountLowThreshold(highWater / 2)
+		lane := &Lane{DC: dc, low: make(chan struct{}, 1), done: l.done, high: highWater(o.Lanes)}
+		dc.SetBufferedAmountLowThreshold(lane.high / 2)
 		dc.OnBufferedAmountLow(func() {
 			select {
 			case lane.low <- struct{}{}:

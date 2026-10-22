@@ -67,9 +67,9 @@ func cmdCheck(ctx context.Context, o *out, args []string) error {
 		report("rendezvous", true, fmt.Sprintf("reached in %s", time.Since(t0).Round(time.Millisecond)))
 		rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 		if err := node.Reserve(rctx); err != nil {
-			report("relay slot", false, err.Error()+" (contacts could not reach this machine)")
+			report("signaling", false, err.Error()+" (contacts could not reach this machine)")
 		} else {
-			report("relay slot", true, "granted: contacts can reach this machine for signaling")
+			report("signaling", true, "the rendezvous will pass contacts' connection requests to this machine")
 		}
 		cancel()
 		node.Close()
@@ -115,7 +115,7 @@ func cmdCheck(ctx context.Context, o *out, args []string) error {
 	}
 	o.event("check", map[string]any{"results": results})
 	for _, r := range results {
-		if !r.OK && (r.Name == "rendezvous" || r.Name == "relay slot") {
+		if !r.OK && (r.Name == "rendezvous" || r.Name == "signaling") {
 			return fmt.Errorf("%w: ferry cannot work until the rendezvous is reachable", errUnreachable)
 		}
 	}
