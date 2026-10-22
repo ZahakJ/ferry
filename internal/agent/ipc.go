@@ -114,8 +114,8 @@ func sameUser(c *net.UnixConn) bool {
 	}
 	ok := false
 	raw.Control(func(fd uintptr) {
-		cred, err := unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
-		ok = err == nil && int(cred.Uid) == os.Getuid()
+		uid, err := peerUID(int(fd))
+		ok = err == nil && uid == os.Getuid()
 	})
 	return ok
 }

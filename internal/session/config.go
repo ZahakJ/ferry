@@ -37,6 +37,13 @@ type Config struct {
 	Loopback  bool `json:"-"`
 }
 
+// DefaultRendezvous is used when neither config.json nor FERRY_RENDEZVOUS
+// names one. Empty until there is a public rendezvous to ship with.
+const DefaultRendezvous = ""
+
+// DefaultRendezvousHTTP is its HTTP gateway, for TURN credentials.
+const DefaultRendezvousHTTP = ""
+
 // DefaultSTUN is used when no STUN server is configured.
 var DefaultSTUN = []string{"stun:stun.l.google.com:19302"}
 
@@ -106,6 +113,9 @@ func (c *Config) applyEnv() {
 	}
 	if c.Lanes > 32 {
 		c.Lanes = 32
+	}
+	if c.Rendezvous == "" {
+		c.Rendezvous, c.RendezvousHTTP = DefaultRendezvous, DefaultRendezvousHTTP
 	}
 }
 

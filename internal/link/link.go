@@ -105,7 +105,7 @@ func (o *Options) api() (*webrtc.API, error) {
 	s.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
 	if o.Loopback {
 		s.SetIncludeLoopbackCandidate(true)
-		s.SetInterfaceFilter(func(n string) bool { return n == "lo" })
+		s.SetInterfaceFilter(func(n string) bool { return n == "lo" || n == "lo0" })
 	} else if os.Getenv("FERRY_ALL_INTERFACES") == "" {
 		s.SetInterfaceFilter(usefulInterface)
 	}

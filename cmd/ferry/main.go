@@ -150,9 +150,12 @@ func kind(code int) string {
 func explain(err error) string {
 	switch {
 	case errors.Is(err, session.ErrNoRendezvous):
-		return "no rendezvous is set. ferry needs one to find the other machine:\n" +
-			"  ferry config rendezvous /dns4/<host>/tcp/4001/p2p/<peer-id>\n" +
-			"Ask whoever runs your Concord rendezvous for its address."
+		return "no rendezvous yet.\n\n" +
+			"A rendezvous is a small server that introduces your machine to the other one;\n" +
+			"it never sees what you send. ferry uses Concord's. Point it at one once:\n\n" +
+			"  ferry config rendezvous /dns4/<host>/tcp/4001/p2p/<peer-id>\n\n" +
+			"Both machines need the same one. Whoever runs it can tell you the address;\n" +
+			"running your own is one command (see Concord's docs/RENDEZVOUS.md)."
 	case errors.Is(err, pair.ErrWrongCode):
 		return "the codes did not match. Check the words with the other person and try again with a new code."
 	}

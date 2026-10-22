@@ -1,3 +1,5 @@
+//go:build linux
+
 // Command sniff watches every frame on an interface and counts how often
 // marker strings appear in them. The harness uses it to show that nothing
 // crossing the network, rendezvous included, carries plaintext.
