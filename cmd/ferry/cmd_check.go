@@ -113,7 +113,7 @@ func cmdCheck(ctx context.Context, o *out, args []string) error {
 		case hasTURN:
 			report("turn relay", false, "the rendezvous offered TURN but allocation failed")
 		default:
-			report("turn relay", false, fmt.Sprintf("not offered by the rendezvous (no TURN at %s/turn); direct only", httpBase(cfg)))
+			report("turn relay", false, "not offered by the rendezvous"+turnWhere(cfg)+"; direct only")
 		}
 	}
 	if agent.Running() {
@@ -130,11 +130,11 @@ func cmdCheck(ctx context.Context, o *out, args []string) error {
 	return nil
 }
 
-func httpBase(cfg *session.Config) string {
+func turnWhere(cfg *session.Config) string {
 	if cfg.RendezvousHTTP != "" {
-		return cfg.RendezvousHTTP
+		return " (no TURN at " + cfg.RendezvousHTTP + "/turn)"
 	}
-	return "the rendezvous"
+	return ""
 }
 
 func uniq(s []string) []string {
