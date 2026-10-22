@@ -192,7 +192,7 @@ var tmpl = template.Must(template.New("page").Parse(`<!doctype html>
 <body>
 <header class="wrap top">
 	<a class="mark" href="../">
-		<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M4 20h24l-3 6H7z" fill="currentColor"/><path d="M9 20V12h14v8" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M15 12V6h2v6" fill="currentColor"/></svg>
+		<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M3 19h26l-3.5 6.5h-19z" fill="currentColor"/><rect x="8" y="13" width="15" height="6" rx="1" fill="none" stroke="currentColor" stroke-width="2"/><rect class="funnel" x="17" y="8" width="4" height="5"/><path d="M2 28.5q3.5-2 7 0t7 0 7 0 7 0" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" opacity=".5"/></svg>
 		ferry
 	</a>
 	<nav><a href="quickstart.html">Docs</a><a href="https://github.com/ZahakJ/ferry">GitHub</a></nav>
