@@ -80,9 +80,9 @@ func cmdSend(ctx context.Context, o *out, args []string) error {
 		o.say("Connected. %s", o.dim("(both sides see: "+s.SAS+")"))
 		defer s.Close()
 		if *lanes == 0 {
-		*lanes = cfg.LanesFor(m.Total)
-	}
-	return sendOver(ctx, o, s, path, m, *lanes)
+			*lanes = cfg.LanesFor(m.Total)
+		}
+		return sendOver(ctx, o, s, path, m, *lanes)
 	}
 	return sendToContact(ctx, o, to, path, m)
 }
