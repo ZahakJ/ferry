@@ -18,16 +18,6 @@ import (
 	"github.com/ZahakJ/ferry/internal/xfer"
 )
 
-// intent opens every contact session: what the dialer wants.
-type intent struct {
-	Want string `json:"want"` // files | msg
-}
-
-type intentReply struct {
-	OK  bool   `json:"ok"`
-	Why string `json:"why,omitempty"`
-}
-
 func cmdSend(ctx context.Context, o *out, args []string) error {
 	fs := flag.NewFlagSet("send", flag.ContinueOnError)
 	lanes := fs.Int("lanes", 0, "parallel connections (default: by size, up to 16)")
@@ -128,44 +118,6 @@ func sendOver(ctx context.Context, o *out, s *session.Session, path string, m *x
 	o.say("%s Sent %s in %s (%s/s, %s).", o.green("✓"), size(m.Total), human(time.Since(p.start)), size(int64(avg)), l.Path)
 	o.event("done", map[string]any{"name": m.Name, "saved_as": saved, "bytes": m.Total, "seconds": time.Since(p.start).Seconds(), "path": l.Path})
 	return nil
-}
-
-func dialContact(ctx context.Context, o *out, cfg *session.Config, name, want string) (*session.Session, error) {
-	id, err := keys.Load()
-	if errors.Is(err, keys.ErrNoIdentity) {
-		return nil, fmt.Errorf("you have no contacts yet. Pair first: `ferry pair`")
-	}
-	if err != nil {
-		return nil, err
-	}
-	c, err := findContact(name)
-	if err != nil {
-		return nil, err
-	}
-	ep, err := session.Online(ctx, cfg, id)
-	if err != nil {
-		return nil, fmt.Errorf("%w: %v", errUnreachable, err)
-	}
-	s, err := ep.Dial(ctx, c)
-	if err != nil {
-		ep.Close()
-		return nil, err
-	}
-	if err := s.Conn.SendJSON(intent{Want: want}); err != nil {
-		ep.Close()
-		return nil, err
-	}
-	var r intentReply
-	if err := s.Conn.RecvJSON(&r); err != nil {
-		ep.Close()
-		return nil, err
-	}
-	if !r.OK {
-		ep.Close()
-		return nil, fmt.Errorf("%w: %s says: %s", errDeclined, name, r.Why)
-	}
-	s.Own(ep)
-	return s, nil
 }
 
 func findContact(name string) (keys.Contact, error) {
@@ -276,21 +228,21 @@ func getFromContact(ctx context.Context, o *out, cfg *session.Config, from, dest
 	busy := make(chan struct{}, 1)
 	err = ep.Listen(ctx, func() keys.Contacts { cs, _ := keys.LoadContacts(); return cs }, func(s *session.Session, c keys.Contact) {
 		defer s.Close()
-		var in intent
+		var in session.Intent
 		if s.Conn.RecvJSON(&in) != nil {
 			return
 		}
 		if in.Want != "files" || (from != "" && c.Name != from) {
-			s.Conn.SendJSON(intentReply{Why: "not accepting that right now"})
+			s.Conn.SendJSON(session.IntentReply{Why: "not accepting that right now"})
 			return
 		}
 		select {
 		case busy <- struct{}{}:
 		default:
-			s.Conn.SendJSON(intentReply{Why: "busy with another transfer; try again shortly"})
+			s.Conn.SendJSON(session.IntentReply{Why: "busy with another transfer; try again shortly"})
 			return
 		}
-		s.Conn.SendJSON(intentReply{OK: true})
+		s.Conn.SendJSON(session.IntentReply{OK: true})
 		o.say("%s is sending.", c.Name)
 		done <- got{receiveOver(ctx, o, s, dest, lanes)}
 	})

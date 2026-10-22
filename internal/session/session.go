@@ -351,3 +351,17 @@ func (e *Endpoint) Listen(ctx context.Context, known func() keys.Contacts, handl
 	})
 	return nil
 }
+
+// Intent is the first message on every contact session: what the dialer
+// wants. New kinds of work (such as jobs) are new values of Want; a side
+// that does not know one answers with OK false and a reason, so older and
+// newer versions fail politely rather than misunderstand each other.
+type Intent struct {
+	Want string `json:"want"` // msg | files
+}
+
+// IntentReply accepts or declines an Intent.
+type IntentReply struct {
+	OK  bool   `json:"ok"`
+	Why string `json:"why,omitempty"`
+}

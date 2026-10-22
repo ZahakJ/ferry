@@ -211,15 +211,6 @@ func (a *Local) newsChan() chan struct{} {
 
 // ---- serving contacts ----
 
-type intent struct {
-	Want string `json:"want"` // msg | files
-}
-
-type intentReply struct {
-	OK  bool   `json:"ok"`
-	Why string `json:"why,omitempty"`
-}
-
 type ack struct {
 	ID string `json:"id"`
 	OK bool   `json:"ok"`
@@ -227,13 +218,13 @@ type ack struct {
 
 func (a *Local) serve(s *session.Session, c keys.Contact) {
 	defer s.Close()
-	var in intent
+	var in session.Intent
 	if s.Conn.RecvJSON(&in) != nil {
 		return
 	}
 	switch in.Want {
 	case "msg":
-		s.Conn.SendJSON(intentReply{OK: true})
+		s.Conn.SendJSON(session.IntentReply{OK: true})
 		for {
 			var m msg.Message
 			if s.Conn.RecvJSON(&m) != nil {
@@ -250,10 +241,10 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 			}
 		}
 	case "files":
-		s.Conn.SendJSON(intentReply{OK: true})
+		s.Conn.SendJSON(session.IntentReply{OK: true})
 		a.receiveFile(s, c)
 	default:
-		s.Conn.SendJSON(intentReply{Why: fmt.Sprintf("this machine does not accept %q", in.Want)})
+		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("this machine does not accept %q", in.Want)})
 	}
 }
 
@@ -397,11 +388,11 @@ func (a *Local) sendDirect(ctx context.Context, ep *session.Endpoint, c keys.Con
 	defer s.Close()
 	done := make(chan error, 1)
 	go func() {
-		if err := s.Conn.SendJSON(intent{Want: "msg"}); err != nil {
+		if err := s.Conn.SendJSON(session.Intent{Want: "msg"}); err != nil {
 			done <- err
 			return
 		}
-		var r intentReply
+		var r session.IntentReply
 		if err := s.Conn.RecvJSON(&r); err != nil || !r.OK {
 			done <- errors.New("declined")
 			return
@@ -516,10 +507,10 @@ func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Pro
 		return nil, err
 	}
 	defer s.Close()
-	if err := s.Conn.SendJSON(intent{Want: "files"}); err != nil {
+	if err := s.Conn.SendJSON(session.Intent{Want: "files"}); err != nil {
 		return nil, err
 	}
-	var r intentReply
+	var r session.IntentReply
 	if err := s.Conn.RecvJSON(&r); err != nil {
 		return nil, err
 	}
