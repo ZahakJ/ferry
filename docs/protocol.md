@@ -135,7 +135,7 @@ rule for that contact in `~/.config/ferry/jobs.json`. There is no default
 rule and no wildcard contact:
 
 ```json
-{"zyad": {
+{"sam": {
   "commands": [["make", "test"], ["go", "test", "./..."]],
   "workdirs": ["~/src/ferry"],
   "limits": {"cpu": 4, "memory": "8G", "wall": "30m"}
@@ -157,6 +157,6 @@ over a link with the ordinary transfer protocol.
 the exact argv and directory, start, end and exit code, whether it was
 allowed.
 
-**Interfaces.** `ferry run zyad -- make test` on the CLI;
+**Interfaces.** `ferry run sam -- make test` on the CLI;
 `submit_job`, `job_status`, `job_logs`, `cancel_job`, `fetch_artifacts` as
 MCP tools.

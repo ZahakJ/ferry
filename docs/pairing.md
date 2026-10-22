@@ -34,7 +34,7 @@ A code looks like `7-acorn-tulip-otter`. It has two parts.
 
 How can two machines prove they know the same words without sending them?
 
-## Step 2: agreeing a key without sending the password
+## Step 2: agreeing on a key without sending the password
 
 ferry uses **CPace**, a *password-authenticated key exchange*. Here is the
 idea. Each side mixes the words into a random number of its own, using
@@ -79,9 +79,10 @@ To get through both routers, the machines use **ICE**. Each asks a public
 STUN server "what address do you see me as?", they swap those addresses,
 and both send packets towards each other at once. To most home routers
 this looks like replies to traffic going out, so they let it in: a
-*hole punch*. When that fails (some networks block it), the traffic goes
-through the rendezvous's **TURN relay** instead. The relay passes along
-encrypted packets it cannot read.
+*hole punch*. When that fails (some networks block it), ferry stops and
+says there is no direct path: data never goes through a server. Forwarding
+one UDP port on a router (`ferry config port 40000`), another network, or
+a VPN gets the machines a path.
 
 You can see which happened at the end of a send:
 
@@ -116,7 +117,7 @@ Tell the other person to run:
     ferry pair 4-blade-crane-smirk
 
 $ ferry pair 4-blade-crane-smirk          # on their machine
-✓ Paired with avi. Both screens should show the same two words: debit music
+✓ Paired with ana. Both screens should show the same two words: debit music
 ```
 
 Pairing runs exactly the steps above, and then the two machines swap
@@ -124,14 +125,14 @@ their **long-term keys**, sealed under the code's key. Each machine has
 one such identity, made the first time it is needed and kept in
 `~/.config/ferry`.
 
-From then on there is no code. When you `ferry send zyad ./file`, your
-machine finds zyad's through the rendezvous by the identity it learned at
+From then on there is no code. When you `ferry send sam ./file`, your
+machine finds sam's through the rendezvous by the identity it learned at
 pairing, and both prove who they are by signing a fresh exchange with
-their long-term keys. A machine that answers as zyad but cannot sign as
-zyad is refused:
+their long-term keys. A machine that answers as sam but cannot sign as
+sam is refused:
 
 ```
-ferry: the machine answering as zyad has a different key than when you paired: refusing
+ferry: the machine answering as sam has a different key than when you paired: refusing
 ```
 
 The two words at the end of pairing are a final check you can do with
@@ -140,9 +141,9 @@ managed to sit in the middle, your screens would show different words.
 
 ## Messages
 
-`ferry msg zyad "…"` sends a short message, signed with your key. If zyad
+`ferry msg sam "…"` sends a short message, signed with your key. If sam
 is online it is delivered at once. If not, it is sealed with a key only
-the two of you can compute and left in zyad's **mailbox** on the
+the two of you can compute and left in sam's **mailbox** on the
 rendezvous, which keeps it for up to two weeks. The rendezvous stores a
 blob it cannot read.
 

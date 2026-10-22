@@ -63,18 +63,18 @@ configured in JSON:
 A typical exchange, as the two sessions would make it:
 
 ```
-avi's session:   send_message { to: "zyad", type: "request",
+ana's session:   send_message { to: "sam", type: "request",
                                 text: "Pushed branch fix-resume. Could you run the integration tests on your machine?" }
                  → { id: "6c55…", via: "direct" }
-                 wait_for_message { from: "zyad", timeout_seconds: 600 }
+                 wait_for_message { from: "sam", timeout_seconds: 600 }
 
-zyad's session:  wait_for_message { from: "avi" }
+sam's session:   wait_for_message { from: "ana" }
                  → { message: { type: "request", text: "Pushed branch fix-resume. …" } }
                  (asks its human, runs the tests)
-                 send_message { to: "avi", reply_to: "6c55…", text: "All 214 pass. Log attached." }
-                 send_file { to: "avi", path: "test.log" }
+                 send_message { to: "ana", reply_to: "6c55…", text: "All 214 pass. Log attached." }
+                 send_file { to: "ana", path: "test.log" }
 
-avi's session:   → { message: { text: "All 214 pass. Log attached.", reply_to: "6c55…" } }
+ana's session:   → { message: { text: "All 214 pass. Log attached.", reply_to: "6c55…" } }
                  list_files_received → fetch_file { seq: 3, dest: "." }
 ```
 
@@ -107,8 +107,8 @@ forwards to it.
 Everything the tools do is also a command, built for scripts:
 
 ```
-ferry msg zyad --type request "please review branch x" --json
-ferry wait --from zyad --timeout 30m --json
+ferry msg sam --type request "please review branch x" --json
+ferry wait --from sam --timeout 30m --json
 ferry inbox --since 41 --json
 ```
 

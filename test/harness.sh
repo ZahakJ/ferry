@@ -8,13 +8,15 @@
 #                   └──── br0 ("the internet") ────┘
 #                              │
 #                          rv 203.0.113.1: Concord rendezvous (DHT, relay,
-#                          mailbox, TURN on tcp/3478) and a STUN server
+#                          mailbox, and TURN, which ferry must never use)
+#                          and a STUN server
 #
 # Both NATs masquerade like home routers; netem on their WAN side shapes
 # the path. Then it proves, in order: pairing, a wrong code rejected,
-# no plaintext on the wire (rendezvous and TURN included), relay fallback
-# when direct UDP is blocked, throughput, a 5 GB transfer killed part way
-# and resumed with a hash match, and two MCP clients talking.
+# no plaintext on the wire (rendezvous included), a plain "no direct path"
+# when direct UDP is blocked, a forwarded port through strict NATs,
+# throughput, a 5 GB transfer killed part way and resumed with a hash
+# match, and two MCP clients talking.
 #
 # Usage: test/harness.sh            (from the repo root)
 # Needs: bin/ferry, bin/rendezvous (built from the Concord repo:
@@ -116,7 +118,7 @@ shape() { # delay loss
 	done
 }
 unshape() { for n in A B; do ns "nat$n" tc qdisc del dev wan root 2>/dev/null || true; done; }
-block_udp() { # between the two homes, so only TURN is left
+block_udp() { # between the two homes, so no direct path is left
 	ns natA nft add rule ip filter between ip daddr 203.0.113.20 meta l4proto udp drop
 	ns natA nft add rule ip filter between ip saddr 203.0.113.20 meta l4proto udp drop
 }
@@ -134,16 +136,15 @@ PIDS="$PIDS $!"
 for i in $(seq 100); do grep -q '^PeerID' "$LOG/rv.log" 2>/dev/null && break; sleep 0.1; done
 RVID=$(sed -n 's/^PeerID: //p' "$LOG/rv.log")
 [ -n "$RVID" ] && ok "rendezvous up ($RVID)" || { bad "rendezvous did not start"; cat "$LOG/rv.log"; exit 1; }
-grep -q TURN "$LOG/rv.log" && ok "TURN relay enabled" || bad "TURN not enabled: $(grep -i turn "$LOG/rv.log" | head -2)"
+grep -q TURN "$LOG/rv.log" && ok "rendezvous offers TURN (ferry must not use it)" || bad "TURN not enabled: $(grep -i turn "$LOG/rv.log" | head -2)"
 
 export FERRY_RENDEZVOUS=/ip4/203.0.113.1/tcp/4001/p2p/$RVID
-export FERRY_RENDEZVOUS_HTTP=http://203.0.113.1:8080
 export FERRY_STUN=stun:203.0.113.1:3479
 HA=$WORK/home-a; HB=$WORK/home-b
 rm -rf "$HA" "$HB"; mkdir -p "$HA" "$HB" "$WORK/in-a" "$WORK/in-b"
 FA="ip netns exec hostA env FERRY_HOME=$HA $BIN/ferry"
 FB="ip netns exec hostB env FERRY_HOME=$HB $BIN/ferry"
-$FA config name avi >/dev/null 2>&1; $FB config name zyad >/dev/null 2>&1
+$FA config name ana >/dev/null 2>&1; $FB config name sam >/dev/null 2>&1
 
 # codeof FILE: wait for the code event in a --json stdout file.
 codeof() { for i in $(seq 300); do grep -q '"code"' "$1" 2>/dev/null && break; sleep 0.1; done; sed -n 's/.*"code":"\([^"]*\)".*/\1/p' "$1" | head -1; }
@@ -162,7 +163,7 @@ if $FB pair "$C" --json > "$LOG/pair-b.json" 2> "$LOG/pair-b.err" && wait $P; th
 	sa=$(field "$LOG/pair-a.json" check); sb=$(field "$LOG/pair-b.json" check)
 	[ -n "$sa" ] && [ "$sa" = "$sb" ] && ok "paired; both sides show the same check words ($sa)" || bad "check words differ: '$sa' vs '$sb'"
 else bad "pairing failed: $(tail -1 "$LOG/pair-b.err")"; fi
-$FA contacts | grep -q zyad && $FB contacts | grep -q avi && ok "each side lists the other" || bad "contacts missing"
+$FA contacts | grep -q sam && $FB contacts | grep -q ana && ok "each side lists the other" || bad "contacts missing"
 fi
 
 if want check; then
@@ -207,44 +208,73 @@ yes "$MARK" | head -c 20000000 > "$WORK/marked.txt"
 "$BIN/sniff" -i any -m "$MARK" -m "$MMSG" -o "$LOG/sniff.json" 2> "$LOG/sniff.err" &
 SN=$!
 sleep 0.5
-# A file by code (direct), a message into an offline mailbox, then the
-# same file again through TURN.
+# A file by code (direct), then a message into an offline mailbox.
 $FA send "$WORK/marked.txt" --json > "$LOG/pt-a.json" 2> "$LOG/pt-a.err" &
 P=$!
 C=$(codeof "$LOG/pt-a.json")
 rm -f "$WORK/in-b/marked.txt"
 $FB get "$C" --to "$WORK/in-b" > /dev/null 2> "$LOG/pt-b.err" && wait $P && cmp -s "$WORK/marked.txt" "$WORK/in-b/marked.txt" \
 	&& ok "marked file sent directly" || bad "direct send of marked file failed: $(tail -1 "$LOG/pt-b.err")"
-$FA msg zyad "$MMSG please" > /dev/null 2>&1 && $FB inbox 2>/dev/null | grep -q "$MMSG" && ok "marked message through the mailbox" || bad "mailbox message failed"
-block_udp
-rm -f "$WORK/in-b/marked.txt"
-$FB get --from avi --to "$WORK/in-b" > /dev/null 2> "$LOG/pt-b2.err" &
-P=$!
-sleep 2
-$FA send zyad "$WORK/marked.txt" --json > "$LOG/pt-a2.json" 2> "$LOG/pt-a2.err" && wait $P && cmp -s "$WORK/marked.txt" "$WORK/in-b/marked.txt" \
-	&& ok "marked file through TURN ($(field "$LOG/pt-a2.json" path))" || bad "TURN send of marked file failed: $(tail -1 "$LOG/pt-a2.err")"
-unblock_udp
+$FA msg sam "$MMSG please" > /dev/null 2>&1 && $FB inbox 2>/dev/null | grep -q "$MMSG" && ok "marked message through the mailbox" || bad "mailbox message failed"
 sleep 0.5
 kill -TERM $SN; wait $SN || true
 frames=$(sed -n 's/.*"frames":\([0-9]*\).*/\1/p' "$LOG/sniff.json")
 if grep -q "\"$MARK\":0" "$LOG/sniff.json" && grep -q "\"$MMSG\":0" "$LOG/sniff.json" && [ "${frames:-0}" -gt 1000 ]; then
-	ok "no marker in $frames frames crossing the internet (rendezvous, relay and TURN included)"
+	ok "no marker in $frames frames crossing the internet (rendezvous included)"
 else bad "plaintext seen or nothing captured: $(cat "$LOG/sniff.json")"; fi
 fi
 
-if want relay; then
-step "relay fallback"
+if want nopath; then
+step "no direct path"
+# UDP between the homes is blocked. The rendezvous offers TURN, but ferry
+# sends directly or not at all, and says so plainly.
 block_udp
-mkfile "$WORK/r.bin" 200
+mkfile "$WORK/r.bin" 20
 rm -f "$WORK/in-b/r.bin"
-$FB get --from avi --to "$WORK/in-b" > /dev/null 2> "$LOG/relay-b.err" &
+$FB get --from ana --to "$WORK/in-b" > /dev/null 2> "$LOG/nopath-b.err" &
 P=$!
 sleep 2
-if $FA send zyad "$WORK/r.bin" --json > "$LOG/relay-a.json" 2> "$LOG/relay-a.err" && wait $P; then
-	path=$(field "$LOG/relay-a.json" path)
-	[ "$path" = "relay (TURN)" ] && cmp -s "$WORK/r.bin" "$WORK/in-b/r.bin" && ok "direct UDP blocked; 200 MB went through TURN and matches" || bad "path was '$path'"
-else bad "relay send failed: $(tail -1 "$LOG/relay-a.err")"; fi
+set +e
+$FA send sam "$WORK/r.bin" > /dev/null 2> "$LOG/nopath-a.err"; ea=$?
+set -e
+kill $P 2>/dev/null; wait $P 2>/dev/null || true
+[ $ea -eq 4 ] && grep -q "no direct path" "$LOG/nopath-a.err" && ok "direct UDP blocked: send exits 4 and says there is no direct path" || bad "exit $ea: $(head -1 "$LOG/nopath-a.err")"
+[ ! -e "$WORK/in-b/r.bin" ] && ok "no data went any other way" || bad "the file arrived without a direct path"
 unblock_udp
+fi
+
+if want forward; then
+step "port forward through strict NATs"
+# Both routers map every destination to a new random port, so hole
+# punching fails; sam's router then forwards udp 40000 to sam.
+for n in A B; do
+	ns "nat$n" nft flush chain ip nat post
+	ns "nat$n" nft add rule ip nat post oifname wan masquerade random
+done
+mkfile "$WORK/f.bin" 50
+fwd() { # label, extra env for sam
+	rm -f "$WORK/in-b/f.bin"
+	ns hostB FERRY_HOME=$HB $2 "$BIN/ferry" get --from ana --to "$WORK/in-b" > /dev/null 2> "$LOG/fwd-$1-b.err" &
+	P=$!
+	sleep 2
+	timeout 60 ip netns exec hostA FERRY_HOME=$HA "$BIN/ferry" send sam "$WORK/f.bin" --json > "$LOG/fwd-$1-a.json" 2> "$LOG/fwd-$1-a.err"
+	r=$?
+	kill $P 2>/dev/null; wait $P 2>/dev/null
+	return $r
+}
+if fwd none ""; then bad "direct worked without a forward; the NATs are not strict enough to test this"
+else ok "strict NATs: no connection, as expected"; fi
+ns natB nft "add chain ip nat pre { type nat hook prerouting priority -100; }"
+ns natB nft add rule ip nat pre iifname wan udp dport 40000 dnat to 192.168.20.2:40000
+ns natB nft insert rule ip nat post ip saddr 192.168.20.2 udp sport 40000 snat to 203.0.113.20:40000
+if fwd port FERRY_PORT=40000 && cmp -s "$WORK/f.bin" "$WORK/in-b/f.bin"; then
+	ok "sam forwards udp 40000: 50 MB went $(field "$LOG/fwd-port-a.json" path) and matches"
+else bad "send with a forwarded port failed: $(tail -1 "$LOG/fwd-port-a.err")"; fi
+ns natB nft delete chain ip nat pre 2>/dev/null || ns natB nft flush chain ip nat pre
+for n in A B; do
+	ns "nat$n" nft flush chain ip nat post
+	ns "nat$n" nft add rule ip nat post oifname wan masquerade
+done
 fi
 
 # speed SIZE_MB LABEL: one code transfer, prints MB/s.
@@ -334,7 +364,7 @@ if want mcp; then
 step "MCP: two model clients"
 mkfile "$WORK/m.bin" 20
 rm -rf "$WORK/fetched"; mkdir -p "$WORK/fetched"
-envs="FERRY_RENDEZVOUS=$FERRY_RENDEZVOUS FERRY_RENDEZVOUS_HTTP=$FERRY_RENDEZVOUS_HTTP FERRY_STUN=$FERRY_STUN"
+envs="FERRY_RENDEZVOUS=$FERRY_RENDEZVOUS FERRY_STUN=$FERRY_STUN"
 if ns hostA "$BIN/mcpdrive" \
 	-a "ip netns exec hostA env $envs FERRY_HOME=$HA $BIN/ferry mcp" \
 	-b "ip netns exec hostB env $envs FERRY_HOME=$HB $BIN/ferry mcp" \

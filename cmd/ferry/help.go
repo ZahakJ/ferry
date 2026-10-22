@@ -44,27 +44,27 @@ var details = map[string]string{
 	"send": `
   ferry send ./file           print a code, wait for the other side to run ferry get <code>
   ferry send ./folder         folders keep their layout; symlinks are skipped
-  ferry send zyad ./file      to a paired contact; no code. They must be online:
+  ferry send sam ./file       to a paired contact; no code. They must be online:
                               running ferry up, ferry mcp, or ferry get.
 Interrupted? Run the same command again; it resumes from what arrived.`,
 	"get": `
   ferry get 7-acorn-tulip-otter        receive with a code into this folder
   ferry get 7-acorn-tulip-otter --to ~/Downloads
-  ferry get --from avi                 wait for a paired contact to send
+  ferry get --from ana                 wait for a paired contact to send
 A name that is taken gets a suffix (photos-2/). Partial data is kept and
 resumed when the same files are sent again.`,
 	"pair": `
   ferry pair                  print a code for the other person
-  ferry pair 7-acorn-tulip-otter --name zyad
+  ferry pair 7-acorn-tulip-otter --name sam
 Both screens then show the same two words; if they differ, someone is in
 the middle: run ferry forget <name> and pair again.`,
 	"msg": `
-  ferry msg zyad "I pushed branch x"
-  ferry msg zyad --type request "please review branch x"
-  git diff | ferry msg zyad --type patch
+  ferry msg sam "I pushed branch x"
+  ferry msg sam --type request "please review branch x"
+  git diff | ferry msg sam --type patch
 Delivered live if they are online, otherwise left in their mailbox.`,
 	"wait": `
-  ferry wait --from zyad --timeout 10m
+  ferry wait --from sam --timeout 10m
 Exits 0 with the message, or 5 on timeout. --since <n> also returns a
 message that arrived after cursor n but before you started waiting.`,
 	"up": `
@@ -129,17 +129,17 @@ MESSAGES
       -> one "message" event, exit 0; or exit 5 on timeout
 
 COORDINATING
-  Ask:    ferry msg zyad --type request "run the tests on branch x and tell me"
-  Listen: ferry wait --from zyad --timeout 30m --json
+  Ask:    ferry msg sam --type request "run the tests on branch x and tell me"
+  Listen: ferry wait --from sam --timeout 30m --json
   Catch up after being away: ferry inbox --since <last cursor> --json
 
 OTHER
   ferry pair [code] [--name n]   pairing (a human should do this)
   ferry contacts --json          {"event":"contacts","contacts":[{"name":...}]}
-  ferry check                    is the rendezvous reachable? STUN? TURN?
+  ferry check                    is the rendezvous reachable? STUN? the port?
   ferry up                       stay online so contacts can reach you
   ferry mcp                      the same as MCP tools over stdio
-  ferry config [key value]       name, rendezvous, rendezvous_http, lanes
+  ferry config [key value]       name, rendezvous, lanes, port
 `
 
 // reference prints the CLI reference as Markdown, from the command table,

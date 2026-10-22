@@ -1,7 +1,7 @@
 // Command mcpdrive plays two model clients talking through ferry's MCP
 // servers, the way two Claude Code sessions would.
 //
-//	mcpdrive -a 'cmd that runs ferry mcp as avi' -b '... as zyad' -file ./x.bin -dest ./got
+//	mcpdrive -a 'cmd that runs ferry mcp as ana' -b '... as sam' -file ./x.bin -dest ./got
 package main
 
 import (
@@ -111,8 +111,8 @@ func pass(format string, a ...any) { fmt.Printf("PASS "+format+"\n", a...) }
 func main() {
 	aCmd := flag.String("a", "", "command running ferry mcp for the first side (contact name of the other: -bname)")
 	bCmd := flag.String("b", "", "command for the second side")
-	aName := flag.String("aname", "avi", "the first side's name as the second knows it")
-	bName := flag.String("bname", "zyad", "the second side's name as the first knows it")
+	aName := flag.String("aname", "ana", "the first side's name as the second knows it")
+	bName := flag.String("bname", "sam", "the second side's name as the first knows it")
 	file := flag.String("file", "", "file for the first side to send")
 	dest := flag.String("dest", "", "where the second side fetches it to")
 	flag.Parse()

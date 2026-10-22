@@ -9,23 +9,23 @@ You will get an answer within a week.
 ## Threat model
 
 ferry connects two machines whose owners trust each other. Everything
-else on the path is assumed hostile: the network, the rendezvous that
-introduces the two sides, and the TURN relay that carries traffic when a
-direct path fails.
+else on the path is assumed hostile: the network, and the rendezvous that
+introduces the two sides. File data goes directly between the two
+machines and never through a server.
 
 ### What each party can and cannot do
 
 **Someone on the network** (your café's Wi-Fi, your ISP) sees that you
-talk to a rendezvous and, later, to an IP address or a relay, and roughly
-how much you send. They cannot read or change anything: every byte is
+talk to a rendezvous and, later, to the other machine's IP address, and
+roughly how much you send. They cannot read or change anything: every byte is
 encrypted and authenticated.
 
 **The rendezvous** sees which ferry identities are online, when two of
 them meet, the slot number of a code, and the size and timing of sealed
 signaling and mailbox messages. It cannot:
 
-- read anything: signaling, mailbox messages and file data are sealed
-  with keys it never sees;
+- read anything: signaling and mailbox messages are sealed with keys it
+  never sees, and file data never passes through it;
 - learn or guess a code's words: they are never sent; CPace reveals
   nothing about them, even to an active attacker;
 - put itself in the middle: the WebRTC offers that name each side's DTLS
@@ -34,11 +34,8 @@ signaling and mailbox messages. It cannot:
 - impersonate a contact: contact sessions are authenticated by long-term
   Ed25519 keys exchanged at pairing.
 
-It can refuse service, delay or drop messages, and hand out bad TURN
-credentials. ferry then fails; it does not fail open.
-
-**The TURN relay** (when used) forwards DTLS-encrypted packets. It sees
-their size and timing, nothing else.
+It can refuse service, delay or drop messages. ferry then fails; it does
+not fail open.
 
 **Someone who learns a code** before it is used can take the transfer or
 the pairing in your place. Codes are meant to be read aloud or sent

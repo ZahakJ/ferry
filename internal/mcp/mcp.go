@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/ZahakJ/ferry/internal/agent"
+	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/session"
 )
 
@@ -161,6 +162,8 @@ func errText(err error) string {
 		kind = "unknown_contact"
 	case errors.Is(err, session.ErrNoRendezvous):
 		kind = "no_rendezvous"
+	case errors.Is(err, link.ErrNoPath):
+		return "no_path: the two machines cannot connect directly; their networks block it. ferry never relays data. The user can try another network, forward a UDP port (ferry config port 40000), or use a VPN or tailnet."
 	}
 	return kind + ": " + err.Error()
 }

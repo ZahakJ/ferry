@@ -7,14 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/pion/webrtc/v4"
 
 	"github.com/ZahakJ/ferry/internal/keys"
@@ -25,24 +22,21 @@ import (
 type Config struct {
 	// Rendezvous is the Concord rendezvous multiaddr.
 	Rendezvous string `json:"rendezvous,omitempty"`
-	// RendezvousHTTP is its HTTP gateway, for TURN credentials.
-	RendezvousHTTP string `json:"rendezvous_http,omitempty"`
 	// STUN servers; empty means the default.
 	STUN []string `json:"stun,omitempty"`
 	// Lanes is how many peer connections a transfer uses; 0 picks by size.
 	Lanes int `json:"lanes,omitempty"`
+	// Port fixes the UDP port connections use, for forwarding on a router;
+	// 0 picks a free port per connection.
+	Port int `json:"port,omitempty"`
 
 	// Not saved: test and debug switches.
-	RelayOnly bool `json:"-"`
-	Loopback  bool `json:"-"`
+	Loopback bool `json:"-"`
 }
 
 // DefaultRendezvous is used when neither config.json nor FERRY_RENDEZVOUS
 // names one.
 const DefaultRendezvous = "/dns/ferry-rdv-zahak.fly.dev/tcp/4001/p2p/12D3KooWG3abzGo1rA3azY76kU91omQxcJDTwwHTzdR1QqgwuJsz"
-
-// DefaultRendezvousHTTP is its HTTP gateway, for TURN credentials.
-const DefaultRendezvousHTTP = ""
 
 // DefaultSTUN is used when no STUN server is configured.
 var DefaultSTUN = []string{"stun:stun.l.google.com:19302"}
@@ -53,8 +47,7 @@ const MaxLanes = 16
 
 // LanesFor picks how many lanes to use for a transfer of total bytes,
 // unless the configuration fixes the number. Small transfers do not need
-// many connections, and each one costs a handshake (and a TURN allocation
-// when relayed).
+// many connections, and each one costs a handshake.
 func (c *Config) LanesFor(total int64) int {
 	if c.Lanes > 0 {
 		return c.Lanes
@@ -94,19 +87,18 @@ func (c *Config) applyEnv() {
 	if v := os.Getenv("FERRY_RENDEZVOUS"); v != "" {
 		c.Rendezvous = v
 	}
-	if v := os.Getenv("FERRY_RENDEZVOUS_HTTP"); v != "" {
-		c.RendezvousHTTP = v
-	}
 	if v := os.Getenv("FERRY_LANES"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
 			c.Lanes = n
 		}
 	}
+	if v := os.Getenv("FERRY_PORT"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			c.Port = n
+		}
+	}
 	if v := os.Getenv("FERRY_STUN"); v != "" {
 		c.STUN = strings.Split(v, ",")
-	}
-	if os.Getenv("FERRY_RELAY_ONLY") != "" {
-		c.RelayOnly = true
 	}
 	if os.Getenv("FERRY_LOOPBACK") != "" {
 		c.Loopback = true
@@ -115,7 +107,7 @@ func (c *Config) applyEnv() {
 		c.Lanes = 32
 	}
 	if c.Rendezvous == "" {
-		c.Rendezvous, c.RendezvousHTTP = DefaultRendezvous, DefaultRendezvousHTTP
+		c.Rendezvous = DefaultRendezvous
 	}
 }
 
@@ -138,68 +130,17 @@ func (c *Config) need() error {
 	return nil
 }
 
-// httpBase guesses the HTTP gateway from the multiaddr when not set.
-func (c *Config) httpBase() string {
-	if c.RendezvousHTTP != "" {
-		return c.RendezvousHTTP
+// ICEServers returns the STUN servers. ferry uses no relay: data goes
+// directly between the two machines or not at all.
+func (c *Config) ICEServers() []webrtc.ICEServer {
+	if c.Loopback {
+		return nil
 	}
-	m, err := ma.NewMultiaddr(c.Rendezvous)
-	if err != nil {
-		return ""
-	}
-	for _, p := range []int{ma.P_DNS, ma.P_DNS4, ma.P_DNS6, ma.P_IP4, ma.P_IP6} {
-		if v, err := m.ValueForProtocol(p); err == nil {
-			if p == ma.P_IP6 {
-				v = "[" + v + "]"
-			}
-			return "http://" + v + ":8080"
-		}
-	}
-	return ""
-}
-
-// ICEServers returns STUN plus, if the rendezvous offers it, TURN.
-func (c *Config) ICEServers(ctx context.Context) []webrtc.ICEServer {
 	stun := c.STUN
 	if len(stun) == 0 {
 		stun = DefaultSTUN
 	}
-	var out []webrtc.ICEServer
-	if !c.Loopback {
-		out = append(out, webrtc.ICEServer{URLs: stun})
-	}
-	base := c.httpBase()
-	if base == "" {
-		return out
-	}
-	ctx, cancel := context.WithTimeout(ctx, 4*time.Second)
-	defer cancel()
-	req, _ := http.NewRequestWithContext(ctx, "GET", base+"/turn", nil)
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return out
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return out
-	}
-	var r struct {
-		IceServers []struct {
-			URLs       []string `json:"urls"`
-			Username   string   `json:"username"`
-			Credential string   `json:"credential"`
-		} `json:"iceServers"`
-	}
-	if json.NewDecoder(resp.Body).Decode(&r) != nil {
-		return out
-	}
-	for _, s := range r.IceServers {
-		if s.Username == "" {
-			continue // its STUN entry; we have our own
-		}
-		out = append(out, webrtc.ICEServer{URLs: s.URLs, Username: s.Username, Credential: s.Credential})
-	}
-	return out
+	return []webrtc.ICEServer{{URLs: stun}}
 }
 
 // LinkOptions builds link options for a session.
@@ -209,8 +150,8 @@ func (c *Config) LinkOptions(ctx context.Context, lanes int) link.Options {
 	}
 	return link.Options{
 		Lanes:      lanes,
-		ICEServers: c.ICEServers(ctx),
-		RelayOnly:  c.RelayOnly,
+		ICEServers: c.ICEServers(),
 		Loopback:   c.Loopback,
+		Port:       c.Port,
 	}
 }

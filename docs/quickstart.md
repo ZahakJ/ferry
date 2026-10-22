@@ -35,10 +35,21 @@ out of the conversation. It never sees what you send (see
 [how it works](pairing.html)).
 
 ferry uses the rendezvous from [Concord](https://github.com/ZahakJ/concord).
-Whoever runs one gives you its address; set it once on each machine:
+Run your own on any machine with a public address (the repository's
+`deploy/fly` folder has the steps for fly.io), or use one a friend runs.
+Set its address once on each machine:
 
 ```
-ferry config rendezvous /dns4/rv.example.org/tcp/4001/p2p/12D3KooW...
+ferry config rendezvous /dns/rv.example.org/tcp/4001/p2p/12D3KooW...
+```
+
+The rendezvous only introduces the machines; the data then goes directly
+between them. Most home routers let that happen. If one does not, forward
+one UDP port on it to the machine behind it, and tell ferry to use that
+port:
+
+```
+ferry config port 40000
 ```
 
 Then ask ferry whether everything it needs is in place:
@@ -50,7 +61,6 @@ $ ferry check
 ✓ relay slot   granted: contacts can reach this machine for signaling
 ✓ local        192.168.1.20:51833
 ✓ public       81.2.69.160:51833 (from STUN; direct connections are likely)
-✓ turn relay   203.0.113.1:40112 (fallback when direct fails)
 ✓ agent        not running (start with `ferry up` to stay reachable)
 ```
 
@@ -87,8 +97,8 @@ That is all. A few things happened that you did not have to think about:
 
 - The code worked **once**. If someone else had typed it first, or typed
   it wrong, it would now be dead, and you would make a new one.
-- The file went **directly** between the two machines when possible, and
-  through a relay when not. The line `(both sides see: motto sway)` is
+- The file went **directly** between the two machines; ferry never sends
+  data through a server. The line `(both sides see: motto sway)` is
   printed on both screens; if you want to be sure no one sat in the middle,
   compare the two words.
 - Every piece was **checked** as it arrived, and the whole file once more

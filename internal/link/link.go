@@ -43,11 +43,12 @@ const (
 type Options struct {
 	Lanes      int
 	ICEServers []webrtc.ICEServer
-	// RelayOnly forces traffic through TURN (for testing the fallback).
-	RelayOnly bool
 	// Loopback allows 127.0.0.1 candidates (tests on one machine).
 	Loopback bool
-	Timeout  time.Duration
+	// Port, when set, is the one UDP port every connection uses, so it can
+	// be forwarded on a router.
+	Port    int
+	Timeout time.Duration
 }
 
 // Link is an open connection.
@@ -57,7 +58,7 @@ type Link struct {
 	Ctl datachannel.ReadWriteCloser
 	// Lanes are reliable, unordered message channels for bulk data.
 	Lanes []*Lane
-	// Path describes how traffic flows, e.g. "direct" or "relay (TURN)".
+	// Path describes how traffic flows: always "direct", as ferry never relays.
 	Path string
 
 	up        atomic.Bool
@@ -67,6 +68,10 @@ type Link struct {
 
 // ErrClosed means the link was closed, often because the peer went away.
 var ErrClosed = errors.New("connection closed")
+
+// ErrNoPath means no direct connection could be made between the two
+// machines: the networks between them block it.
+var ErrNoPath = errors.New("no direct path between the two machines")
 
 // Lane is one bulk-data channel.
 type Lane struct {
@@ -112,8 +117,7 @@ func (o *Options) api() (*webrtc.API, error) {
 	s.SetIPFilter(func(ip net.IP) bool { return !ip.IsLinkLocalUnicast() })
 	s.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
 	// NATs often drop the first probes of a hole punch, so keep checking
-	// longer, and let a link that started on TURN move to a direct path
-	// once one works (both ends are pion, which supports renomination).
+	// longer, and let a link move to a better path once one works (both ends are pion, which supports renomination).
 	s.SetICEMaxBindingRequests(25)
 	if err := s.SetICERenomination(); err != nil {
 		return nil, err
@@ -133,6 +137,11 @@ func (o *Options) api() (*webrtc.API, error) {
 		return nil, err
 	}
 	s.SetNet(bufNet{n})
+	if o.Port > 0 {
+		if err := o.useFixedPort(&s); err != nil {
+			return nil, err
+		}
+	}
 	return webrtc.NewAPI(webrtc.WithSettingEngine(s)), nil
 }
 
@@ -174,9 +183,6 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 
 	l := &Link{done: make(chan struct{})}
 	cfg := webrtc.Configuration{ICEServers: o.ICEServers}
-	if o.RelayOnly {
-		cfg.ICETransportPolicy = webrtc.ICETransportPolicyRelay
-	}
 	type ready struct {
 		lane int
 		err  error
@@ -291,7 +297,7 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 	}
 	if ctl == nil || lanes[0] == nil {
 		l.Close()
-		return nil, fmt.Errorf("could not connect (%s); run `ferry check` on both machines", strings.Join(errs, "; "))
+		return nil, fmt.Errorf("%w (%s)", ErrNoPath, strings.Join(errs, "; "))
 	}
 	l.Ctl = ctl
 	for _, ln := range lanes {
@@ -357,7 +363,7 @@ func (l *Link) signal(ctx context.Context, sig *secure.Conn, initiator bool) err
 		}
 		pc := l.pcs[s.Lane]
 		if initiator {
-			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: s.SDP}); err != nil {
+			if err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeAnswer, SDP: directOnly(s.SDP)}); err != nil {
 				return err
 			}
 			continue
@@ -365,7 +371,7 @@ func (l *Link) signal(ctx context.Context, sig *secure.Conn, initiator bool) err
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: s.SDP})
+			err := pc.SetRemoteDescription(webrtc.SessionDescription{Type: webrtc.SDPTypeOffer, SDP: directOnly(s.SDP)})
 			var ans webrtc.SessionDescription
 			if err == nil {
 				ans, err = pc.CreateAnswer(nil)
@@ -401,9 +407,6 @@ func path(pc *webrtc.PeerConnection) string {
 	p, err := sctp.Transport().ICETransport().GetSelectedCandidatePair()
 	if err != nil || p == nil {
 		return "unknown"
-	}
-	if p.Local.Typ == webrtc.ICECandidateTypeRelay || p.Remote.Typ == webrtc.ICECandidateTypeRelay {
-		return "relay (TURN)"
 	}
 	return "direct"
 }
@@ -483,12 +486,12 @@ func (n bufNet) ListenPacket(network, address string) (net.PacketConn, error) {
 
 // Candidate is one way this machine could be reached.
 type Candidate struct {
-	Type    string `json:"type"` // host | srflx | relay
+	Type    string `json:"type"` // host | srflx
 	Address string `json:"address"`
 }
 
 // Gather lists the candidates ICE finds with these options: local
-// addresses, the public address STUN reports, and TURN relay addresses.
+// addresses and the public address STUN reports.
 func Gather(ctx context.Context, o Options) ([]Candidate, error) {
 	api, err := o.api()
 	if err != nil {
@@ -528,4 +531,18 @@ func Gather(ctx context.Context, o Options) ([]Candidate, error) {
 	mu.Lock()
 	defer mu.Unlock()
 	return out, nil
+}
+
+// directOnly drops relay candidates from a peer's description, so data
+// never goes through a TURN server even if the peer offers one.
+func directOnly(sdp string) string {
+	lines := strings.SplitAfter(sdp, "\n")
+	out := lines[:0]
+	for _, l := range lines {
+		if strings.HasPrefix(l, "a=candidate:") && strings.Contains(l, " typ relay") {
+			continue
+		}
+		out = append(out, l)
+	}
+	return strings.Join(out, "")
 }

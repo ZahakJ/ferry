@@ -150,15 +150,19 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		if id != nil {
 			name = id.Name
 		}
-		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "rendezvous_http": cfg.RendezvousHTTP, "lanes": cfg.Lanes, "dir": keys.Dir()})
+		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "dir": keys.Dir()})
 		o.result("name             %s", name)
 		o.result("rendezvous       %s", cfg.Rendezvous)
-		o.result("rendezvous_http  %s", cfg.RendezvousHTTP)
 		lanes := "by size (2-16)"
 		if cfg.Lanes > 0 {
 			lanes = fmt.Sprint(cfg.Lanes)
 		}
 		o.result("lanes            %s", lanes)
+		port := "any (pick a free one each time)"
+		if cfg.Port > 0 {
+			port = fmt.Sprintf("udp %d", cfg.Port)
+		}
+		o.result("port             %s", port)
 		o.result("%s", o.dim("stored in "+keys.Dir()))
 	}
 	switch len(args) {
@@ -167,7 +171,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		return nil
 	case 2:
 	default:
-		return usagef("usage: ferry config [name|rendezvous|rendezvous_http|lanes <value>]")
+		return usagef("usage: ferry config [name|rendezvous|lanes|port <value>]")
 	}
 	k, v := args[0], args[1]
 	// Edit the file as written, without environment overrides.
@@ -192,16 +196,20 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		return nil
 	case "rendezvous":
 		cfg.Rendezvous = v
-	case "rendezvous_http":
-		cfg.RendezvousHTTP = strings.TrimRight(v, "/")
 	case "lanes":
 		var n int
 		if _, err := fmt.Sscan(v, &n); err != nil || n < 1 || n > 32 {
 			return usagef("lanes is a number from 1 to 32")
 		}
 		cfg.Lanes = n
+	case "port":
+		var n int
+		if _, err := fmt.Sscan(v, &n); err != nil || n < 0 || n > 65535 {
+			return usagef("port is a UDP port number, or 0 for any")
+		}
+		cfg.Port = n
 	default:
-		return usagef("unknown setting %q; settings are name, rendezvous, rendezvous_http, lanes", k)
+		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port", k)
 	}
 	if err := cfg.Save(); err != nil {
 		return err

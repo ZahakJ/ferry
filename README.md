@@ -21,10 +21,10 @@ resumes if interrupted, and is checked byte for byte on arrival.
 
 ```
 ferry pair                    # prints a code; the friend runs: ferry pair <code>
-ferry send zyad ./photos      # from now on, no codes
-ferry msg zyad "pushed branch x, have a look"
+ferry send sam ./photos       # from now on, no codes
+ferry msg sam "pushed branch x, have a look"
 ferry inbox
-ferry wait --from zyad --timeout 10m
+ferry wait --from sam --timeout 10m
 ```
 
 Messages reach a friend who is offline too: they wait, sealed, in a
@@ -55,35 +55,45 @@ model to treat received text as untrusted.
 
 ## Install
 
-One static binary (Linux now; macOS builds are on the way):
+One static binary for Linux and macOS:
 
 ```
 go install github.com/ZahakJ/ferry/cmd/ferry@latest
 ```
 
-ferry needs a [Concord](https://github.com/ZahakJ/concord) rendezvous to
-introduce the two machines. Point it at one:
+To reach each other across the internet, two machines need a rendezvous
+server to introduce them, and a way through their routers. Run your own
+rendezvous ([deploy/fly](deploy/fly) has the steps for fly.io; any machine
+with a public address works) and point both machines at it:
 
 ```
-ferry config rendezvous /dns4/rv.example.org/tcp/4001/p2p/12D3KooW...
+ferry config rendezvous /dns/rv.example.org/tcp/4001/p2p/12D3KooW...
+```
+
+If a router blocks the direct connection, forward one UDP port to the
+machine behind it and tell ferry to use it:
+
+```
+ferry config port 40000
 ferry check
 ```
 
 `ferry check` says what works and what does not: the rendezvous, your
-public address, the TURN relay.
+public address, the port.
 
 ## How it works
 
 1. **Meeting.** Both sides connect out to the rendezvous. The code's
    number is a meeting slot there; its words never leave your machine.
-2. **Agreeing a key.** The two sides run CPace, a password-authenticated
+2. **Agreeing on a key.** The two sides run CPace, a password-authenticated
    key exchange, over the words. Someone watching, or the rendezvous
    itself, learns nothing about them, and a wrong guess burns the code:
    one try, then both sides stop.
 3. **Connecting.** Sealed under that key, they swap WebRTC offers. Those
    carry the fingerprints of the encryption keys the data connection will
    use, so nobody in the middle can substitute their own. Then ICE punches
-   through both NATs, or falls back to the rendezvous's TURN relay.
+   through both NATs. Data only ever goes directly between the two
+   machines; if no direct path exists, ferry says so and stops.
 4. **Moving data.** The transfer is split across several connections at
    once (one alone recovers slowly from loss on long paths). Each piece
    carries a BLAKE3 hash and each file is hashed whole; nothing gets its
@@ -114,11 +124,11 @@ How the numbers were found and what was tuned: [docs/throughput.md](docs/through
 
 ## Tested
 
-`test/harness.sh` builds two NATed homes, a rendezvous with TURN and a
-STUN server inside a user namespace (no root needed) and checks: pairing;
-a wrong code rejected on both sides; a direct path through both NATs;
-fallback to TURN when UDP between them is blocked; no plaintext anywhere
-on the wire, rendezvous and relay included; a 5 GB transfer killed part
+`test/harness.sh` builds two NATed homes, a rendezvous and a STUN server
+inside a user namespace (no root needed) and checks: pairing; a wrong code
+rejected on both sides; a direct path through both NATs; a plain "no
+direct path" when UDP between them is blocked; a forwarded port through
+strict NATs; no plaintext anywhere on the wire, rendezvous included; a 5 GB transfer killed part
 way and resumed with a matching hash; and two MCP clients exchanging
 messages and a file.
 

@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/ZahakJ/ferry/internal/keys"
+	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/msg"
 	"github.com/ZahakJ/ferry/internal/session"
 	"github.com/ZahakJ/ferry/internal/xfer"
@@ -80,6 +81,7 @@ var kinds = map[string]error{
 	"declined":        session.ErrDeclined,
 	"auth":            session.ErrKeyChanged,
 	"no_room":         xfer.ErrNoRoom,
+	"no_path":         link.ErrNoPath,
 }
 
 func kindOf(err error) string {

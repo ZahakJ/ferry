@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/pair"
 	"github.com/ZahakJ/ferry/internal/secure"
 	"github.com/ZahakJ/ferry/internal/session"
@@ -38,7 +39,7 @@ func init() {
 		{"wait", "[--from contact] [--timeout 10m]", "wait for the next message", cmdWait},
 		{"files", "", "list files contacts have sent to this machine", cmdFiles},
 		{"up", "[--unit]", "stay online in the background so contacts can reach you", cmdUp},
-		{"check", "", "test the connection to the rendezvous, STUN and TURN, and explain the results", cmdCheck},
+		{"check", "", "test the connection to the rendezvous and STUN, and explain the results", cmdCheck},
 		{"mcp", "", "serve ferry as MCP tools on stdio (for Claude Code and other agents)", cmdMCP},
 		{"contacts", "", "list paired contacts", cmdContacts},
 		{"forget", "<contact>", "remove a contact", cmdForget},
@@ -120,7 +121,7 @@ func exitCode(ctx context.Context, err error) int {
 		return exitUsage
 	case errors.Is(err, pair.ErrWrongCode), errors.Is(err, session.ErrCodeUsed), errors.Is(err, secure.ErrBadFrame), errors.Is(err, errAuth), errors.Is(err, session.ErrKeyChanged):
 		return exitAuth
-	case errors.Is(err, session.ErrOffline), errors.Is(err, session.ErrNobodyThere), errors.Is(err, errUnreachable):
+	case errors.Is(err, session.ErrOffline), errors.Is(err, session.ErrNobodyThere), errors.Is(err, errUnreachable), errors.Is(err, link.ErrNoPath):
 		return exitOffline
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, errTimeout):
 		return exitTimeout
@@ -157,6 +158,8 @@ func explain(err error) string {
 			"  ferry config rendezvous /dns4/<host>/tcp/4001/p2p/<peer-id>\n\n" +
 			"Both machines need the same one. Whoever runs it can tell you the address;\n" +
 			"running your own is one command (see Concord's docs/RENDEZVOUS.md)."
+	case errors.Is(err, link.ErrNoPath):
+		return noPath
 	case errors.Is(err, pair.ErrWrongCode):
 		return "the codes did not match. Check the words with the other person and try again with a new code."
 	}
@@ -225,3 +228,11 @@ func cmdVersion(ctx context.Context, o *out, args []string) error {
 	o.event("version", map[string]any{"version": version})
 	return nil
 }
+
+const noPath = "no direct path between the two machines.\n\n" +
+	"The networks they are on block direct connections, and ferry only sends\n" +
+	"directly, never through a server. Any one of these usually fixes it:\n\n" +
+	"  - try from another network; a phone hotspot often works\n" +
+	"  - forward one UDP port on your router to this machine: ferry config port 40000\n" +
+	"  - put one or both machines on a VPN or a tailnet (Tailscale, ZeroTier, WireGuard)\n\n" +
+	"`ferry check` on each machine shows what its network allows."

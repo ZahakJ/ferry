@@ -75,45 +75,37 @@ func cmdCheck(ctx context.Context, o *out, args []string) error {
 		node.Close()
 	}
 
-	turnURL := cfg.ICEServers(ctx)
-	hasTURN := false
-	for _, s := range turnURL {
-		for _, u := range s.URLs {
-			if strings.HasPrefix(u, "turn") {
-				hasTURN = true
-			}
+	gctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	lo := cfg.LinkOptions(gctx, 1)
+	if cfg.Port > 0 {
+		switch bound, pub := link.FixedPort(lo); {
+		case !bound:
+			report("port", false, fmt.Sprintf("udp %d is taken (by `ferry up`?); this run uses any free port", cfg.Port))
+		case len(pub) > 0:
+			report("port", true, fmt.Sprintf("udp %d, also offered as %s:%d for a router port forward", cfg.Port, strings.Join(pub, ", "), cfg.Port))
+		default:
+			report("port", true, fmt.Sprintf("udp %d", cfg.Port))
 		}
 	}
-	gctx, cancel := context.WithTimeout(ctx, 15*time.Second)
-	cands, err := link.Gather(gctx, cfg.LinkOptions(gctx, 1))
+	cands, err := link.Gather(gctx, lo)
 	cancel()
 	if err != nil {
 		report("network", false, err.Error())
 	} else {
-		var host, srflx, relay []string
+		var host, srflx []string
 		for _, c := range cands {
 			switch c.Type {
 			case "host":
 				host = append(host, c.Address)
 			case "srflx":
 				srflx = append(srflx, c.Address)
-			case "relay":
-				relay = append(relay, c.Address)
 			}
 		}
 		report("local", len(host) > 0, strings.Join(uniq(host), " "))
 		if len(srflx) > 0 {
 			report("public", true, strings.Join(uniq(srflx), " ")+" (from STUN; direct connections are likely)")
 		} else {
-			report("public", false, "STUN gave no public address; UDP may be blocked, so transfers will need the relay")
-		}
-		switch {
-		case len(relay) > 0:
-			report("turn relay", true, strings.Join(uniq(relay), " ")+" (fallback when direct fails)")
-		case hasTURN:
-			report("turn relay", false, "the rendezvous offered TURN but allocation failed")
-		default:
-			report("turn relay", false, "not offered by the rendezvous"+turnWhere(cfg)+"; direct only")
+			report("public", false, "STUN gave no public address: this network seems to block UDP, so direct connections will likely fail. Try another network, or a VPN or tailnet")
 		}
 	}
 	if agent.Running() {
@@ -128,13 +120,6 @@ func cmdCheck(ctx context.Context, o *out, args []string) error {
 		}
 	}
 	return nil
-}
-
-func turnWhere(cfg *session.Config) string {
-	if cfg.RendezvousHTTP != "" {
-		return " (no TURN at " + cfg.RendezvousHTTP + "/turn)"
-	}
-	return ""
 }
 
 func uniq(s []string) []string {

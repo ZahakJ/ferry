@@ -90,10 +90,10 @@
 		say(right, 60, [["", "holiday.mp4"]]);
 		say(left, 0, [["g", "✓"], ["", " Sent 2.1 GB in 19s (110.5 MB/s, direct)."]]);
 
-		type(left, 'ferry msg zyad "it is the director\'s cut, enjoy"');
-		say(left, 300, [["g", "✓"], ["", " Sent to zyad, delivered."]]);
+		type(left, 'ferry msg sam "it is the director\'s cut, enjoy"');
+		say(left, 300, [["g", "✓"], ["", " Sent to sam, delivered."]]);
 		type(right, "ferry inbox");
-		say(right, 300, [["d", "#12 ← "], ["", "avi        "], ["d", "21:04"], ["", "  it is the director's cut, enjoy"]]);
+		say(right, 300, [["d", "#12 ← "], ["", "ana        "], ["d", "21:04"], ["", "  it is the director's cut, enjoy"]]);
 		say(right, 60, [["d", "Next time: ferry inbox --since 12"]]);
 		return s;
 	}

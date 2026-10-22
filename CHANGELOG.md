@@ -16,11 +16,14 @@ exit codes are part of the public interface.
   without codes.
 - Signed messages (`ferry msg`, `inbox`, `wait`), delivered live or left
   sealed in the rendezvous mailbox.
+- `ferry config port N` (or `FERRY_PORT`): one fixed UDP port for every
+  connection, advertised with the public address, so it can be forwarded
+  on a router when hole punching fails.
 - `ferry up`, a background agent with a unix-socket API, and a systemd
   user unit printed by `ferry up --unit`.
 - `ferry mcp`, an MCP server for Claude Code and other agents.
 - `ferry check`, `ferry help --llm`, `--json` everywhere, stable exit codes.
-- A rootless two-machine test harness with NAT, netem and TURN.
+- A rootless two-machine test harness with NAT and netem.
 
 ### Security
 

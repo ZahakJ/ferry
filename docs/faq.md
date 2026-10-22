@@ -13,8 +13,7 @@ it pairs. Nothing is registered anywhere.
 ### Can the rendezvous read my files?
 
 No. It introduces the two machines and, for offline contacts, holds sealed
-messages. File data goes directly between the machines, or through the
-TURN relay as encrypted packets. The [threat model](security.html) lists
+messages. File data goes directly between the machines and never through it. The [threat model](security.html) lists
 exactly what the rendezvous can see: who is online, when two machines
 meet, and how much sealed data passes.
 
@@ -42,9 +41,11 @@ stream managed 0.4. See
 
 ### Does it work behind a company or university network?
 
-Usually. If the network blocks the direct path, ferry falls back to the
-TURN relay over TCP on a single port, which most networks allow. `ferry
-check` shows what works on your network.
+Often. ferry only sends directly, so a network that blocks UDP between
+the two machines stops it, and ferry says so. Then try another network,
+put one machine on a VPN or a tailnet, or, where you control the router,
+forward one UDP port: `ferry config port 40000`. `ferry check` shows what
+your network allows.
 
 ### What happens if the transfer is interrupted?
 
@@ -72,7 +73,7 @@ readable only by you.
 
 ### How do I remove a contact?
 
-`ferry forget zyad`. To talk again, pair again.
+`ferry forget sam`. To talk again, pair again.
 
 ### Why WebRTC?
 
