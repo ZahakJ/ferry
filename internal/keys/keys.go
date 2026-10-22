@@ -21,6 +21,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ZahakJ/ferry/internal/rv"
 )
 
 // Public is what a peer learns about us when we pair.
@@ -49,10 +51,12 @@ type Identity struct {
 // Public returns the shareable half of the identity.
 func (id *Identity) Public() Public {
 	bk, _ := ecdh.X25519().NewPrivateKey(id.BoxKey)
+	p, _ := rv.PeerID(id.SignKey)
 	return Public{
 		Name: id.Name,
 		Sign: id.SignKey.Public().(ed25519.PublicKey),
 		Box:  bk.PublicKey().Bytes(),
+		Peer: p.String(),
 	}
 }
 

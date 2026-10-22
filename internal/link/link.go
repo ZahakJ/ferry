@@ -116,7 +116,7 @@ func (o *Options) api() (*webrtc.API, error) {
 
 type signal struct {
 	Lane int    `json:"lane"`
-	Type string `json:"type"` // offer | answer | failed
+	Type string `json:"type"` // lanes | offer | answer | failed
 	SDP  string `json:"sdp,omitempty"`
 	Err  string `json:"err,omitempty"`
 }
@@ -132,6 +132,22 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 	}
 	ctx, cancel := context.WithTimeout(ctx, o.Timeout)
 	defer cancel()
+
+	// The dialer picks the number of lanes; the other side follows.
+	if initiator {
+		if err := sig.SendJSON(signal{Type: "lanes", Lane: o.Lanes}); err != nil {
+			return nil, err
+		}
+	} else {
+		var s signal
+		if err := sig.RecvJSON(&s); err != nil {
+			return nil, err
+		}
+		if s.Type != "lanes" || s.Lane < 1 || s.Lane > 32 {
+			return nil, errors.New("unexpected signaling message")
+		}
+		o.Lanes = s.Lane
+	}
 
 	l := &Link{}
 	cfg := webrtc.Configuration{ICEServers: o.ICEServers}

@@ -192,6 +192,8 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 					progress(r.Bytes, m.Total)
 				}
 			case "complete", "cancel":
+				// Let the receiver know it may hang up.
+				l.SendCtl(ctl{T: "bye"})
 				final <- r
 				return
 			}
@@ -560,6 +562,7 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 		}()
 	}
 
+	bye := make(chan struct{})
 	// Control: whole-file hashes from the sender.
 	go func() {
 		for {
@@ -582,6 +585,9 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 				}
 			case "cancel":
 				fail(fmt.Errorf("the sender cancelled: %s", c.Reason))
+				return
+			case "bye":
+				close(bye)
 				return
 			}
 		}
@@ -685,6 +691,12 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	}
 	os.Remove(statePath(dest, o.ID))
 	l.SendCtl(ctl{T: "complete", OK: true, Saved: st.Root})
+	// Hanging up at once could discard the message above; wait for the
+	// sender to acknowledge it.
+	select {
+	case <-bye:
+	case <-time.After(5 * time.Second):
+	}
 	return rootPath, nil
 }
 
