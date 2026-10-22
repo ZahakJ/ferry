@@ -4,9 +4,7 @@
 #   scripts/release.sh v0.1.0
 #
 # Binaries are static (CGO_ENABLED=0) and reproducible (-trimpath, no
-# build ID). SHA256SUMS lists them; sign it with
-#   ssh-keygen -Y sign -f ~/.ssh/id_ed25519 -n file dist/SHA256SUMS
-# and verify with ssh-keygen -Y verify (see docs/install.md).
+# build ID). SHA256SUMS lists them.
 set -eu
 version=${1:?usage: scripts/release.sh vX.Y.Z}
 cd "$(dirname "$0")/.."

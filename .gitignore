@@ -1,8 +1,5 @@
 /bin/
-BRIEF.md
 /dist/
-RESUME.md
-STATUS.md
 /test/tmp/
 /site/
 /deploy/fly/*.seed

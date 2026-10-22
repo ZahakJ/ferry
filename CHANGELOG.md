@@ -7,6 +7,10 @@ exit codes are part of the public interface.
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-22
+
+First release. Static binaries for Linux and macOS, amd64 and arm64.
+
 ### Added
 
 - `ferry send` / `ferry get` with one-time codes: files and folders over
@@ -23,6 +27,10 @@ exit codes are part of the public interface.
   user unit printed by `ferry up --unit`.
 - `ferry mcp`, an MCP server for Claude Code and other agents.
 - `ferry check`, `ferry help --llm`, `--json` everywhere, stable exit codes.
+- A default rendezvous, so a first transfer needs no setup;
+  `ferry config rendezvous` points at your own.
+- Direct only: data goes machine to machine or not at all. When no direct
+  path exists, ferry says so and lists what helps.
 - A rootless two-machine test harness with NAT and netem.
 
 ### Security
@@ -35,3 +43,6 @@ exit codes are part of the public interface.
 - Peer text is sanitized before it reaches the terminal.
 - The agent socket lives in a private directory and both ends check
   each other's user.
+
+[Unreleased]: https://github.com/ZahakJ/ferry/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/ZahakJ/ferry/releases/tag/v0.1.0

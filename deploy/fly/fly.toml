@@ -16,9 +16,9 @@ primary_region = "iad"
   size = "shared-cpu-1x"
   memory = "256mb"
 
-# Raw libp2p on 4001: TCP (works everywhere, and carries the relay fallback)
-# and QUIC over UDP (IPv4 only on fly). No HTTP service: ferry needs none
-# while there is no TURN, so Concord's guest and booking pages stay internal.
+# Raw libp2p on 4001: TCP (works everywhere) and QUIC over UDP (IPv4 only
+# on fly). No HTTP service: ferry needs none, so Concord's guest and
+# booking pages stay internal.
 [[services]]
   internal_port = 4001
   protocol = "tcp"
