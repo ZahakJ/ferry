@@ -68,9 +68,9 @@ var tools = []tool{
 	{
 		Name:  "send_file",
 		Title: "Send a file",
-		Description: "Send a file or folder to a contact who is online, over a direct encrypted connection (falling back " +
-			"to a relay). Each piece and each whole file is checked with BLAKE3. Blocks until the contact confirms " +
-			"every byte arrived. Fails with offline if they are not reachable.",
+		Description: "Send a file or folder to a contact who is online, over a direct encrypted connection, " +
+			"never through a server. Each piece and each whole file is checked with BLAKE3. Blocks until the contact confirms " +
+			"every byte arrived. Fails with offline if they are not reachable, and no_path if their networks block a direct connection.",
 		InputSchema: obj(map[string]any{
 			"to":   str("contact name"),
 			"path": str("file or folder on this machine"),

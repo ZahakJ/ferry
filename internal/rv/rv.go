@@ -103,7 +103,7 @@ func (n *Node) Close() error {
 func (n *Node) Reserve(ctx context.Context) error {
 	r, err := client.Reserve(ctx, n.Host, n.RV)
 	if err != nil {
-		return fmt.Errorf("rendezvous refused a relay slot: %w", err)
+		return fmt.Errorf("rendezvous refused to pass connection requests to this machine: %w", err)
 	}
 	go func() {
 		for {
