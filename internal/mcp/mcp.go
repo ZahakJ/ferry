@@ -297,7 +297,13 @@ func (s *Server) fetch(ctx context.Context, seq int64, dest string) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	target := filepath.Join(dest, filepath.Base(src))
+	// The sender chose the name. Never let it become something tools act
+	// on by name in a project (.git, .envrc, .vscode, .claude...).
+	name := strings.TrimLeft(filepath.Base(src), ".")
+	if name == "" {
+		name = "file"
+	}
+	target := filepath.Join(dest, fmt.Sprintf("ferry-%d-%s", seq, name))
 	if _, err := os.Lstat(target); err == nil {
 		return nil, fmt.Errorf("%s already exists; choose another dest", target)
 	}

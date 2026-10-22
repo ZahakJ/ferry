@@ -3,6 +3,7 @@ package msg
 import (
 	"bufio"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"syscall"
@@ -53,21 +54,33 @@ func (s *Store) locked(write bool, f func(*os.File) error) error {
 	return f(fh)
 }
 
+// readAll reads every record. A damaged or oversized line is skipped, so
+// one bad entry can never make the whole log unreadable.
 func readAll(fh *os.File) ([]Record, error) {
 	if _, err := fh.Seek(0, 0); err != nil {
 		return nil, err
 	}
 	var out []Record
-	sc := bufio.NewScanner(fh)
-	sc.Buffer(make([]byte, 1<<20), 1<<20)
-	for sc.Scan() {
-		var r Record
-		if json.Unmarshal(sc.Bytes(), &r) == nil && r.Msg != nil {
-			out = append(out, r)
+	br := bufio.NewReader(fh)
+	for {
+		line, err := br.ReadBytes('\n')
+		if len(line) > 0 && len(line) <= maxLine {
+			var r Record
+			if json.Unmarshal(line, &r) == nil && r.Msg != nil {
+				out = append(out, r)
+			}
+		}
+		if err == io.EOF {
+			return out, nil
+		}
+		if err != nil {
+			return out, err
 		}
 	}
-	return out, sc.Err()
 }
+
+// maxLine bounds one stored record; real ones are far smaller.
+const maxLine = 4 * MaxText
 
 // Add logs r unless a message with the same ID and direction is already
 // there. It fills in Seq and At and reports whether it was new.
@@ -80,7 +93,7 @@ func (s *Store) Add(r *Record) (bool, error) {
 		}
 		var last int64
 		for _, x := range all {
-			if x.Msg.ID == r.Msg.ID && x.Dir == r.Dir {
+			if x.Msg.ID == r.Msg.ID && x.Dir == r.Dir && x.Contact == r.Contact {
 				*r = x
 				return nil
 			}

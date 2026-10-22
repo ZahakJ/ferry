@@ -306,7 +306,7 @@ func (e *Endpoint) Dial(ctx context.Context, c keys.Contact) (*Session, error) {
 	binding := []byte(st.Conn().LocalPeer().String() + "\x00" + st.Conn().RemotePeer().String())
 	conn, peerKey, err := secure.Handshake(st, e.ID, binding, true, func(k keys.Public) error {
 		if string(k.Sign) != string(c.Key.Sign) {
-			return fmt.Errorf("the machine answering as %s has a different key than when you paired: refusing", c.Name)
+			return fmt.Errorf("%w: the machine answering as %s has a different key than when you paired: refusing", ErrKeyChanged, c.Name)
 		}
 		return nil
 	})
@@ -365,3 +365,10 @@ type IntentReply struct {
 	OK  bool   `json:"ok"`
 	Why string `json:"why,omitempty"`
 }
+
+// ErrKeyChanged means a contact answered with a key other than the one
+// recorded at pairing.
+var ErrKeyChanged = errors.New("contact key changed")
+
+// ErrDeclined means a contact refused what was asked.
+var ErrDeclined = errors.New("declined")

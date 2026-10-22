@@ -111,7 +111,8 @@ type Local struct {
 	ep         *session.Endpoint
 	listening  bool
 	background bool
-	news       chan struct{} // closed and replaced when a message lands
+	news       chan struct{}   // closed and replaced when a message lands
+	busy       map[string]bool // contacts with a transfer in progress
 	stop       context.CancelFunc
 }
 
@@ -230,9 +231,13 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 			if s.Conn.RecvJSON(&m) != nil {
 				return
 			}
+			// Acknowledge only what is verified and safely stored, so the
+			// sender falls back to the mailbox rather than lose a message.
 			ok := m.Verify(c.Key, a.id.Public()) == nil
 			if ok {
-				if added, _ := a.store.Add(&msg.Record{Dir: "in", Contact: c.Name, Via: "direct", Msg: &m}); added {
+				added, err := a.store.Add(&msg.Record{Dir: "in", Contact: c.Name, Via: "direct", Msg: &m})
+				ok = err == nil
+				if added {
 					a.notify()
 				}
 			}
@@ -241,6 +246,13 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 			}
 		}
 	case "files":
+		// One transfer at a time per contact; free space is checked
+		// before any data is accepted.
+		if !a.claimTransfer(c.Name) {
+			s.Conn.SendJSON(session.IntentReply{Why: "already receiving a transfer from you; try again when it finishes"})
+			return
+		}
+		defer a.releaseTransfer(c.Name)
 		s.Conn.SendJSON(session.IntentReply{OK: true})
 		a.receiveFile(s, c)
 	default:
@@ -515,7 +527,7 @@ func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Pro
 		return nil, err
 	}
 	if !r.OK {
-		return nil, fmt.Errorf("%s declined: %s", c.Name, r.Why)
+		return nil, fmt.Errorf("%w: %s says: %s", session.ErrDeclined, c.Name, r.Why)
 	}
 	l, err := s.Link(ctx, a.cfg.LanesFor(m.Total))
 	if err != nil {
@@ -531,4 +543,23 @@ func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Pro
 
 func (a *Local) Files(ctx context.Context, since int64) ([]Received, error) {
 	return a.files.since(since)
+}
+
+func (a *Local) claimTransfer(contact string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.busy == nil {
+		a.busy = map[string]bool{}
+	}
+	if a.busy[contact] {
+		return false
+	}
+	a.busy[contact] = true
+	return true
+}
+
+func (a *Local) releaseTransfer(contact string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	delete(a.busy, contact)
 }

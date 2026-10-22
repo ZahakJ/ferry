@@ -74,7 +74,7 @@ func printRecord(o *out, r msg.Record) {
 		o.event("message", recordJSON(r))
 		return
 	}
-	who := r.Contact
+	who := clean(r.Contact)
 	arrow := o.dim("←")
 	if r.Dir == "out" {
 		arrow = o.dim("→")
@@ -86,11 +86,11 @@ func printRecord(o *out, r msg.Record) {
 	}
 	typ := ""
 	if r.Msg.Type != msg.Note {
-		typ = o.bold("["+r.Msg.Type+"]") + " "
+		typ = o.bold("["+clean(r.Msg.Type)+"]") + " "
 	}
-	body := r.Msg.Text
+	body := clean(r.Msg.Text)
 	if len(r.Msg.Data) > 0 {
-		body = strings.TrimSpace(body + " " + o.dim(string(r.Msg.Data)))
+		body = strings.TrimSpace(body + " " + o.dim(clean(string(r.Msg.Data))))
 	}
 	o.result("%s %s %-10s %s  %s%s", o.dim(fmt.Sprintf("#%d", r.Seq)), arrow, who, o.dim(when), typ, body)
 }
@@ -189,7 +189,7 @@ func cmdFiles(ctx context.Context, o *out, args []string) error {
 		o.say(o.dim("No files received yet. Files contacts send while `ferry up` runs land in " + agent.FilesDir()))
 	}
 	for _, f := range list {
-		o.result("%s %-10s %-9s %s", o.dim(fmt.Sprintf("#%d", f.Seq)), f.Contact, size(f.Bytes), f.Path)
+		o.result("%s %-10s %-9s %s", o.dim(fmt.Sprintf("#%d", f.Seq)), clean(f.Contact), size(f.Bytes), clean(f.Path))
 	}
 	return nil
 }

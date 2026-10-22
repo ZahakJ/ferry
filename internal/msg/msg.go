@@ -83,7 +83,7 @@ func (m *Message) Verify(from, me keys.Public) error {
 	if !ed25519.Verify(from.Sign, m.signedBytes(), m.Sig) {
 		return errors.New("bad signature")
 	}
-	if len(m.ID) == 0 || len(m.ID) > 64 || len(m.Type) > 64 || len(m.Text)+len(m.Data) > MaxText {
+	if len(m.ID) == 0 || len(m.ID) > 64 || len(m.Type) > 64 || len(m.ReplyTo) > 64 || len(m.Text)+len(m.Data) > MaxText {
 		return errors.New("malformed message")
 	}
 	return nil

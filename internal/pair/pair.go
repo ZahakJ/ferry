@@ -52,10 +52,10 @@ func Parse(s string) (Code, error) {
 		return r == '-' || r == ' ' || r == '_' || r == '.' || r == ','
 	})
 	if len(f) != NumWords+1 {
-		return Code{}, fmt.Errorf("a code is a number and %d words, like 7-acorn-tulip-otter; %q has %d parts", NumWords, s, len(f))
+		return Code{}, fmt.Errorf("a code is a number and %d words, like 7-acorn-tulip-otter; that one has %d parts", NumWords, len(f))
 	}
 	if _, err := strconv.Atoi(f[0]); err != nil {
-		return Code{}, fmt.Errorf("a code starts with a number, like 7-acorn-tulip-otter; %q starts with %q", s, f[0])
+		return Code{}, errors.New("a code starts with a number, like 7-acorn-tulip-otter")
 	}
 	for _, w := range f[1:] {
 		if !words.Valid(w) {

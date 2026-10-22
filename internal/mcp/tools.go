@@ -89,7 +89,7 @@ var tools = []tool{
 		Name:  "fetch_file",
 		Title: "Fetch a received file",
 		Description: "Copy a received file or folder (by seq from list_files_received) into a directory, for example the " +
-			"current project. Execute permissions are removed. Refuses to overwrite.",
+			"current project, as ferry-<seq>-<name>. Execute permissions are removed. Refuses to overwrite.",
 		InputSchema: obj(map[string]any{
 			"seq":  num("seq from list_files_received"),
 			"dest": str("directory to copy into; default the current directory"),

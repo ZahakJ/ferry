@@ -21,3 +21,14 @@ exit codes are part of the public interface.
 - `ferry mcp`, an MCP server for Claude Code and other agents.
 - `ferry check`, `ferry help --llm`, `--json` everywhere, stable exit codes.
 - A rootless two-machine test harness with NAT, netem and TURN.
+
+### Security
+
+- Received paths must be canonical; names that would collide (case,
+  `.ferry-part`, `a/../b`) are refused. Dot-named roots are renamed.
+- Pairing proves possession of the presented key.
+- Bounded resources for untrusted manifests: lazy file handles, one
+  hasher, size and count limits, a free-space check.
+- Peer text is sanitized before it reaches the terminal.
+- The agent socket lives in a private directory and both ends check
+  each other's user.

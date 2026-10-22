@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"syscall"
+
 	"golang.org/x/sys/unix"
 
 	"github.com/ZahakJ/ferry/internal/keys"
@@ -21,18 +23,31 @@ import (
 )
 
 // SocketPath is where a background agent listens. Unix socket paths are
-// limited to about 100 bytes, so a deep FERRY_HOME uses the runtime dir.
+// limited to about 100 bytes, so a deep FERRY_HOME uses a private
+// directory in the runtime dir (or the temp dir) instead.
 func SocketPath() string {
 	p := filepath.Join(keys.Dir(), "agent.sock")
 	if len(p) < 100 {
 		return p
 	}
-	dir := os.Getenv("XDG_RUNTIME_DIR")
-	if dir == "" {
-		dir = os.TempDir()
-	}
 	h := sha256.Sum256([]byte(keys.Dir()))
-	return filepath.Join(dir, fmt.Sprintf("ferry-%x.sock", h[:8]))
+	return filepath.Join(privateDir(), fmt.Sprintf("%x.sock", h[:8]))
+}
+
+// privateDir is a directory only this user can enter, so nobody else can
+// put a socket where ours is expected.
+func privateDir() string {
+	base := os.Getenv("XDG_RUNTIME_DIR")
+	if base == "" {
+		base = os.TempDir()
+	}
+	d := filepath.Join(base, fmt.Sprintf("ferry-%d", os.Getuid()))
+	os.Mkdir(d, 0o700)
+	if st, err := os.Lstat(d); err == nil && st.IsDir() && st.Mode().Perm() == 0o700 && owned(st) {
+		return d
+	}
+	// Someone else made it, or it is a symlink: fall back to our own home.
+	return keys.Dir()
 }
 
 type request struct {
@@ -61,6 +76,10 @@ var kinds = map[string]error{
 	"unknown_contact": ErrUnknownContact,
 	"no_rendezvous":   session.ErrNoRendezvous,
 	"canceled":        context.Canceled,
+	"integrity":       xfer.ErrIntegrity,
+	"declined":        session.ErrDeclined,
+	"auth":            session.ErrKeyChanged,
+	"no_room":         xfer.ErrNoRoom,
 }
 
 func kindOf(err error) string {
@@ -178,7 +197,9 @@ type Remote struct{}
 
 // Running reports whether a background agent answers on the socket.
 func Running() bool {
-	c, err := net.DialTimeout("unix", SocketPath(), time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	c, err := dialAgent(ctx)
 	if err != nil {
 		return false
 	}
@@ -195,8 +216,7 @@ func Open(cfg *session.Config) (API, error) {
 }
 
 func (r *Remote) call(ctx context.Context, req request, out any, progress xfer.Progress) error {
-	var d net.Dialer
-	c, err := d.DialContext(ctx, "unix", SocketPath())
+	c, err := dialAgent(ctx)
 	if err != nil {
 		return fmt.Errorf("background agent: %w", err)
 	}
@@ -281,3 +301,23 @@ func (r *Remote) Files(ctx context.Context, since int64) ([]Received, error) {
 }
 
 func (r *Remote) Close() error { return nil }
+
+func owned(st os.FileInfo) bool {
+	s, ok := st.Sys().(*syscall.Stat_t)
+	return ok && int(s.Uid) == os.Getuid()
+}
+
+// dialAgent connects to the agent socket and checks that whoever answers
+// runs as this user; a socket from anyone else is treated as absent.
+func dialAgent(ctx context.Context) (net.Conn, error) {
+	var d net.Dialer
+	c, err := d.DialContext(ctx, "unix", SocketPath())
+	if err != nil {
+		return nil, err
+	}
+	if !sameUser(c.(*net.UnixConn)) {
+		c.Close()
+		return nil, fmt.Errorf("the agent socket %s belongs to another user; refusing it", SocketPath())
+	}
+	return c, nil
+}

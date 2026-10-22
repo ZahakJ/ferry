@@ -42,7 +42,7 @@ func cmdSend(ctx context.Context, o *out, args []string) error {
 		return err
 	}
 	for _, s := range m.Skipped {
-		o.say("%s %s (not a regular file)", o.dim("skipping"), s)
+		o.say("%s %s (not a regular file)", o.dim("skipping"), clean(s))
 	}
 	cfg, err := session.LoadConfig()
 	if err != nil {
@@ -106,12 +106,6 @@ func sendOver(ctx context.Context, o *out, s *session.Session, path string, m *x
 	saved, err := xfer.Send(ctx, l, path, m, p.update)
 	p.end()
 	if err != nil {
-		if strings.Contains(err.Error(), "does not match") || strings.Contains(err.Error(), "integrity") {
-			return fmt.Errorf("%w: %v", errIntegrity, err)
-		}
-		if strings.Contains(err.Error(), "declined") {
-			return fmt.Errorf("%w: %v", errDeclined, err)
-		}
 		return err
 	}
 	avg := p.average()
@@ -183,10 +177,7 @@ func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error
 	saved, err := xfer.Receive(ctx, l, offer, dest, p.update, nil)
 	p.end()
 	if err != nil {
-		if strings.Contains(err.Error(), "does not match") || strings.Contains(err.Error(), "integrity") {
-			return fmt.Errorf("%w: %v", errIntegrity, err)
-		}
-		if ctx.Err() == nil {
+		if ctx.Err() == nil && !errors.Is(err, xfer.ErrIntegrity) && !errors.Is(err, xfer.ErrNoRoom) {
 			return fmt.Errorf("%v\nRun the same command again (with a new code) to resume where it stopped", err)
 		}
 		return err
@@ -266,13 +257,13 @@ func getFromContact(ctx context.Context, o *out, cfg *session.Config, from, dest
 func describe(m *xfer.Manifest) string {
 	n := countFiles(m)
 	if n == 1 && m.Files[0].Path == "" {
-		return fmt.Sprintf("%s (%s)", m.Name, size(m.Total))
+		return fmt.Sprintf("%s (%s)", clean(m.Name), size(m.Total))
 	}
 	files := "files"
 	if n == 1 {
 		files = "file"
 	}
-	return fmt.Sprintf("%s/ (%d %s, %s)", m.Name, n, files, size(m.Total))
+	return fmt.Sprintf("%s/ (%d %s, %s)", clean(m.Name), n, files, size(m.Total))
 }
 
 func countFiles(m *xfer.Manifest) int {

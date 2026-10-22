@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -144,10 +145,18 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 	if err := l.SendCtl(ctl{T: "offer", ID: m.ID(), Name: m.Name, Total: m.Total, NFiles: len(m.Files), Skipped: m.Skipped}); err != nil {
 		return "", err
 	}
-	for i := 0; i < len(m.Files); i += filesBatch {
-		if err := l.SendCtl(ctl{T: "files", Files: m.Files[i:min(i+filesBatch, len(m.Files))]}); err != nil {
+	// Batches are bounded by count and by size, so long paths still fit in
+	// one control message.
+	for start := 0; start < len(m.Files); {
+		end, bytes := start, 0
+		for end < len(m.Files) && end-start < filesBatch && bytes < link.MaxMessage/4 {
+			bytes += len(m.Files[end].Path) + 96
+			end++
+		}
+		if err := l.SendCtl(ctl{T: "files", Files: m.Files[start:end]}); err != nil {
 			return "", err
 		}
+		start = end
 	}
 	reply, err := readCtl(l)
 	if err != nil {
@@ -156,7 +165,7 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 	switch reply.T {
 	case "accept":
 	case "decline":
-		return "", fmt.Errorf("the receiver declined: %s", reply.Reason)
+		return "", fmt.Errorf("%w: the receiver said: %s", ErrDeclined, reply.Reason)
 	default:
 		return "", fmt.Errorf("unexpected reply %q", reply.T)
 	}
@@ -388,12 +397,141 @@ type rfile struct {
 	f       File
 	part    string // path while incomplete
 	final   string
-	fh      *os.File
-	have    bitmap
-	arrived chan struct{} // poked when a piece lands
-	hash    chan string   // sender's whole-file hash
-	result  chan error
+	pieces  int
+	claimed bitmap // a lane has taken this piece; no one else may write it
+	have    bitmap // the piece is written; the hasher may read it
+	hash    chan string
 }
+
+// claim marks piece i as taken and reports whether this caller got it.
+func (b bitmap) claim(i int) bool {
+	p := &b[i/64]
+	bit := uint64(1) << (uint(i) % 64)
+	for {
+		old := atomic.LoadUint64(p)
+		if old&bit != 0 {
+			return false
+		}
+		if atomic.CompareAndSwapUint64(p, old, old|bit) {
+			return true
+		}
+	}
+}
+
+// handles keeps a small number of part files open, so a transfer of a
+// million files does not need a million file descriptors.
+type handles struct {
+	mu    sync.Mutex
+	files []*rfile
+	open  map[int]*os.File
+	order []int
+}
+
+const maxOpen = 32
+
+func (h *handles) get(i int) (*os.File, error) {
+	if fh, ok := h.open[i]; ok {
+		for k, x := range h.order {
+			if x == i {
+				h.order = append(append(h.order[:k:k], h.order[k+1:]...), i)
+				break
+			}
+		}
+		return fh, nil
+	}
+	rf := h.files[i]
+	fh, err := os.OpenFile(rf.part, os.O_RDWR|os.O_CREATE, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := fh.Truncate(rf.f.Size); err != nil {
+		fh.Close()
+		return nil, fmt.Errorf("not enough room for %s: %w", rf.f.Path, err)
+	}
+	if len(h.order) >= maxOpen {
+		old := h.order[0]
+		h.order = h.order[1:]
+		h.open[old].Sync()
+		h.open[old].Close()
+		delete(h.open, old)
+	}
+	h.open[i] = fh
+	h.order = append(h.order, i)
+	return fh, nil
+}
+
+func (h *handles) writeAt(i int, b []byte, off int64) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	fh, err := h.get(i)
+	if err != nil {
+		return err
+	}
+	_, err = fh.WriteAt(b, off)
+	return err
+}
+
+func (h *handles) readAt(i int, b []byte, off int64) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	fh, err := h.get(i)
+	if err != nil {
+		return err
+	}
+	_, err = fh.ReadAt(b, off)
+	return err
+}
+
+// finish makes sure file i exists, flushes and closes it.
+func (h *handles) finish(i int) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	fh, err := h.get(i)
+	if err != nil {
+		return err
+	}
+	err = fh.Sync()
+	fh.Close()
+	delete(h.open, i)
+	for k, x := range h.order {
+		if x == i {
+			h.order = append(h.order[:k], h.order[k+1:]...)
+			break
+		}
+	}
+	return err
+}
+
+func (h *handles) syncAll() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, fh := range h.open {
+		fh.Sync()
+	}
+}
+
+func (h *handles) closeAll() {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, fh := range h.open {
+		fh.Close()
+	}
+	h.open = map[int]*os.File{}
+	h.order = nil
+}
+
+// rootName is the name the transfer gets in dest. A name starting with a
+// dot (.git, .envrc, .vscode) could change how tools behave in that
+// folder, so it is saved under a plain name instead.
+func rootName(name string) string {
+	if strings.HasPrefix(name, ".") {
+		return "dot-" + strings.TrimLeft(name, ".")
+	}
+	return name
+}
+
+// ErrNoRoom means the destination has too little free space.
+var ErrNoRoom = errors.New("not enough free space")
 
 // Receive accepts an offer and writes it into dest. It resumes from any
 // earlier attempt at the same transfer. It returns the saved path; onSaved,
@@ -408,15 +546,14 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	}
 	st := loadState(dest, o.ID)
 	if st == nil {
-		st = &state{ID: o.ID, Root: freeName(dest, m.Name), Done: map[int]string{}, Partial: map[string]string{}}
-	}
-	if err := st.save(dest); err != nil {
-		return "", fmt.Errorf("cannot write to %s: %w", dest, err)
+		st = &state{ID: o.ID, Root: freeName(dest, rootName(m.Name)), Done: map[int]string{}, Partial: map[string]string{}}
 	}
 	single := len(m.Files) == 1 && m.Files[0].Path == ""
 	rootPath := filepath.Join(dest, st.Root)
 
 	files := make([]*rfile, len(m.Files))
+	h := &handles{files: files, open: map[int]*os.File{}}
+	defer h.closeAll()
 	var held atomic.Int64
 	reply := ctl{T: "accept", Partial: map[string]string{}}
 	for i, f := range m.Files {
@@ -424,32 +561,28 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 		if !single {
 			final = filepath.Join(rootPath, filepath.FromSlash(f.Path))
 		}
-		rf := &rfile{f: f, final: final, part: final + ".ferry-part", hash: make(chan string, 1), result: make(chan error, 1), arrived: make(chan struct{}, 1)}
+		rf := &rfile{f: f, final: final, part: final + ".ferry-part", pieces: f.Pieces(), hash: make(chan string, 1)}
 		files[i] = rf
 		if f.Dir {
-			if err := os.MkdirAll(final, 0o755); err != nil {
-				return "", err
-			}
 			continue
 		}
 		if _, ok := st.Done[i]; ok {
 			if _, err := os.Stat(final); err == nil {
 				reply.Done = append(reply.Done, i)
 				held.Add(f.Size)
+				rf.pieces = -1 // nothing to do
 				continue
 			}
 			delete(st.Done, i)
 		}
-		if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
-			return "", err
-		}
-		rf.have = newBitmap(f.Pieces())
+		rf.claimed, rf.have = newBitmap(rf.pieces), newBitmap(rf.pieces)
 		if s, ok := st.Partial[fmt.Sprint(i)]; ok {
 			if _, err := os.Stat(rf.part); err == nil {
-				if b, err := decodeBitmap(s, f.Pieces()); err == nil {
-					rf.have = b
+				if b, err := decodeBitmap(s, rf.pieces); err == nil {
+					copy(rf.have, b)
+					copy(rf.claimed, b)
 					reply.Partial[fmt.Sprint(i)] = s
-					for n := 0; n < f.Pieces(); n++ {
+					for n := 0; n < rf.pieces; n++ {
 						if b.has(n) {
 							held.Add(min(PieceSize, f.Size-int64(n)*PieceSize))
 						}
@@ -457,15 +590,26 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 				}
 			}
 		}
-		fh, err := os.OpenFile(rf.part, os.O_RDWR|os.O_CREATE, 0o600)
-		if err != nil {
-			return "", err
+	}
+	if need := m.Total - held.Load(); need > 0 {
+		if free, err := freeSpace(dest); err == nil && free < need+64<<20 {
+			Decline(l, fmt.Sprintf("not enough room: needs %d more bytes, %d free", need, free))
+			return "", fmt.Errorf("%w in %s: the transfer needs %d more bytes and %d are free", ErrNoRoom, dest, need, free)
 		}
-		defer fh.Close()
-		if err := fh.Truncate(f.Size); err != nil {
-			return "", fmt.Errorf("not enough room for %s: %w", f.Path, err)
+	}
+	if err := st.save(dest); err != nil {
+		return "", fmt.Errorf("cannot write to %s: %w", dest, err)
+	}
+	for i, f := range m.Files {
+		if f.Dir {
+			if err := os.MkdirAll(files[i].final, 0o755); err != nil {
+				return "", err
+			}
+		} else if files[i].pieces >= 0 {
+			if err := os.MkdirAll(filepath.Dir(files[i].final), 0o755); err != nil {
+				return "", err
+			}
 		}
-		rf.fh = fh
 	}
 	if err := l.SendCtl(reply); err != nil {
 		return "", err
@@ -479,8 +623,11 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 		}
 		cancel()
 	}
+	arrived := make(chan struct{}, 1)
 
-	// Lanes: check and write pieces.
+	// Lanes: check and write pieces. A piece is claimed before it is
+	// written and never written twice, so what the hasher reads cannot
+	// change underneath it.
 	for _, ln := range l.Lanes {
 		go func() {
 			buf := make([]byte, link.MaxMessage)
@@ -498,74 +645,38 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 					return
 				}
 				idx := int(binary.BigEndian.Uint32(p[1:]))
-				off := int64(binary.BigEndian.Uint64(p[5:]))
+				off := binary.BigEndian.Uint64(p[5:])
 				data := p[pieceHeader:]
-				if idx >= len(files) || files[idx].fh == nil || off%PieceSize != 0 || off+int64(len(data)) > files[idx].f.Size ||
-					int64(len(data)) != min(PieceSize, files[idx].f.Size-off) {
+				if idx >= len(files) || files[idx].pieces <= 0 || off%PieceSize != 0 || off >= uint64(files[idx].f.Size) ||
+					int64(len(data)) != min(PieceSize, files[idx].f.Size-int64(off)) {
 					fail(errors.New("piece does not fit the manifest"))
 					return
 				}
+				rf := files[idx]
+				piece := int(off / PieceSize)
 				if !bytes.Equal(pieceHash(data), p[13:29]) {
-					fail(fmt.Errorf("piece of %s failed its integrity check", files[idx].f.Path))
+					fail(fmt.Errorf("%w: a piece of %s failed its check", ErrIntegrity, rf.f.Path))
 					return
 				}
-				rf := files[idx]
-				if _, err := rf.fh.WriteAt(data, off); err != nil {
+				if !rf.claimed.claim(piece) {
+					continue // already have it
+				}
+				if err := h.writeAt(idx, data, int64(off)); err != nil {
 					fail(fmt.Errorf("writing %s: %w", rf.part, err))
 					return
 				}
-				if !rf.have.has(int(off / PieceSize)) {
-					rf.have.set(int(off / PieceSize))
-					held.Add(int64(len(data)))
-				}
+				rf.have.set(piece)
+				held.Add(int64(len(data)))
 				select {
-				case rf.arrived <- struct{}{}:
+				case arrived <- struct{}{}:
 				default:
 				}
 			}
 		}()
 	}
 
-	// Hash each file in order as its pieces land, reading back from disk
-	// (usually the page cache), so memory stays flat however big it is.
-	for _, rf := range files {
-		if rf.fh == nil {
-			continue
-		}
-		go func() {
-			h := blake3.New(32, nil)
-			buf := make([]byte, PieceSize)
-			for n := 0; n < rf.f.Pieces(); n++ {
-				for !rf.have.has(n) {
-					select {
-					case <-rf.arrived:
-					case <-time.After(200 * time.Millisecond):
-					case <-ctx.Done():
-						return
-					}
-				}
-				size := min(PieceSize, rf.f.Size-int64(n)*PieceSize)
-				if _, err := rf.fh.ReadAt(buf[:size], int64(n)*PieceSize); err != nil {
-					rf.result <- err
-					return
-				}
-				h.Write(buf[:size])
-			}
-			got := hex.EncodeToString(h.Sum(nil))
-			select {
-			case want := <-rf.hash:
-				if got != want {
-					rf.result <- fmt.Errorf("%s does not match the sender's copy", rf.f.Path)
-					return
-				}
-				rf.result <- nil
-			case <-ctx.Done():
-			}
-		}()
-	}
-
-	bye := make(chan struct{})
 	// Control: whole-file hashes from the sender.
+	bye := make(chan struct{})
 	go func() {
 		for {
 			c, err := readCtl(l)
@@ -577,7 +688,7 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 			}
 			switch c.T {
 			case "end-file":
-				if c.Idx < 0 || c.Idx >= len(files) || files[c.Idx].fh == nil {
+				if c.Idx < 0 || c.Idx >= len(files) || files[c.Idx].pieces < 0 || files[c.Idx].f.Dir {
 					fail(errors.New("bad end-file"))
 					return
 				}
@@ -595,19 +706,70 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 		}
 	}()
 
+	// One hasher walks the files in order as their pieces land, reading
+	// back from disk (usually the page cache), so memory stays flat
+	// however many files there are.
+	type result struct {
+		i   int
+		err error
+	}
+	results := make(chan result, 1)
+	go func() {
+		buf := make([]byte, PieceSize)
+		for i, rf := range files {
+			if rf.f.Dir || rf.pieces < 0 {
+				continue
+			}
+			hs := blake3.New(32, nil)
+			for n := 0; n < rf.pieces; n++ {
+				for !rf.have.has(n) {
+					select {
+					case <-arrived:
+					case <-time.After(200 * time.Millisecond):
+					case <-ctx.Done():
+						return
+					}
+				}
+				size := min(PieceSize, rf.f.Size-int64(n)*PieceSize)
+				if err := h.readAt(i, buf[:size], int64(n)*PieceSize); err != nil {
+					results <- result{i, err}
+					return
+				}
+				hs.Write(buf[:size])
+			}
+			got := hex.EncodeToString(hs.Sum(nil))
+			var err error
+			select {
+			case want := <-rf.hash:
+				if got != want {
+					err = fmt.Errorf("%w: %s does not match the sender's copy", ErrIntegrity, rf.f.Path)
+				}
+			case <-ctx.Done():
+				return
+			}
+			select {
+			case results <- result{i, err}:
+			case <-ctx.Done():
+				return
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+
 	// Checkpoint: sync data, then record what is safely on disk.
 	checkpoint := func() {
 		snaps := map[int]bitmap{}
 		for i, rf := range files {
-			if rf.fh != nil {
+			if rf.pieces > 0 {
 				snaps[i] = rf.have.snapshot()
 			}
 		}
-		for i, rf := range files {
-			if rf.fh != nil {
-				if rf.fh.Sync() == nil {
-					st.Partial[fmt.Sprint(i)] = snaps[i].encode()
-				}
+		h.syncAll()
+		for i, b := range snaps {
+			if _, done := st.Done[i]; !done {
+				st.Partial[fmt.Sprint(i)] = b.encode()
 			}
 		}
 		st.save(dest)
@@ -618,30 +780,10 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 
 	pending := 0
 	for _, rf := range files {
-		if rf.fh != nil {
+		if !rf.f.Dir && rf.pieces >= 0 {
 			pending++
 		}
 	}
-	results := make(chan struct {
-		i   int
-		err error
-	}, len(files))
-	for i, rf := range files {
-		if rf.fh == nil {
-			continue
-		}
-		go func() {
-			select {
-			case err := <-rf.result:
-				results <- struct {
-					i   int
-					err error
-				}{i, err}
-			case <-ctx.Done():
-			}
-		}()
-	}
-
 	for pending > 0 {
 		select {
 		case r := <-results:
@@ -654,9 +796,9 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 				l.SendCtl(ctl{T: "complete", OK: false, Reason: r.err.Error()})
 				return "", r.err
 			}
-			rf.fh.Sync()
-			rf.fh.Close()
-			rf.fh = nil
+			if err := h.finish(r.i); err != nil {
+				return "", err
+			}
 			if err := os.Rename(rf.part, rf.final); err != nil {
 				return "", err
 			}
@@ -665,7 +807,9 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 			os.Chtimes(rf.final, mt, mt)
 			st.Done[r.i] = "ok"
 			delete(st.Partial, fmt.Sprint(r.i))
-			st.save(dest)
+			if time.Since(lastCP) > 2*time.Second {
+				st.save(dest)
+			}
 		case <-tick.C:
 			l.SendCtl(ctl{T: "progress", Bytes: held.Load()})
 			if progress != nil {
@@ -705,6 +849,12 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	return rootPath, nil
 }
 
+// ErrIntegrity means received data did not match its hash.
+var ErrIntegrity = errors.New("integrity check failed")
+
 // safeMode keeps permission bits but never setuid, setgid or sticky, and
 // never write access for others.
 func safeMode(m os.FileMode) os.FileMode { return m.Perm() &^ 0o002 }
+
+// ErrDeclined means the receiver refused the offer.
+var ErrDeclined = errors.New("declined")

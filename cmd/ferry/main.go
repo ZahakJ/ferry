@@ -14,6 +14,7 @@ import (
 	"github.com/ZahakJ/ferry/internal/pair"
 	"github.com/ZahakJ/ferry/internal/secure"
 	"github.com/ZahakJ/ferry/internal/session"
+	"github.com/ZahakJ/ferry/internal/xfer"
 )
 
 var version = "dev"
@@ -97,7 +98,7 @@ func run(argv []string) int {
 	if code == exitInterrupt {
 		o.say("Stopped.")
 	} else {
-		o.say("%s %s", o.red("ferry:"), explain(err))
+		o.say("%s %s", o.red("ferry:"), clean(explain(err)))
 	}
 	o.event("error", map[string]any{"error": explain(err), "exit": code, "kind": kind(code)})
 	return code
@@ -117,15 +118,15 @@ func exitCode(ctx context.Context, err error) int {
 		return exitInterrupt
 	case errors.As(err, &ue), errors.Is(err, flag.ErrHelp):
 		return exitUsage
-	case errors.Is(err, pair.ErrWrongCode), errors.Is(err, session.ErrCodeUsed), errors.Is(err, secure.ErrBadFrame), errors.Is(err, errAuth):
+	case errors.Is(err, pair.ErrWrongCode), errors.Is(err, session.ErrCodeUsed), errors.Is(err, secure.ErrBadFrame), errors.Is(err, errAuth), errors.Is(err, session.ErrKeyChanged):
 		return exitAuth
 	case errors.Is(err, session.ErrOffline), errors.Is(err, session.ErrNobodyThere), errors.Is(err, errUnreachable):
 		return exitOffline
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, errTimeout):
 		return exitTimeout
-	case errors.Is(err, errIntegrity):
+	case errors.Is(err, errIntegrity), errors.Is(err, xfer.ErrIntegrity):
 		return exitIntegrity
-	case errors.Is(err, errDeclined):
+	case errors.Is(err, errDeclined), errors.Is(err, xfer.ErrDeclined), errors.Is(err, session.ErrDeclined):
 		return exitDeclined
 	}
 	return exitError

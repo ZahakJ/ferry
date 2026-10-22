@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 )
@@ -118,24 +119,54 @@ func (m *Manifest) Check() error {
 	if len(m.Files) > 1_000_000 {
 		return errors.New("too many files")
 	}
+	if strings.HasSuffix(m.Name, ".ferry-part") {
+		return fmt.Errorf("refusing unsafe name %q", m.Name)
+	}
 	var total int64
+	// Case-folded, so two paths cannot land on one file on macOS or Windows.
 	seen := map[string]bool{}
 	single := len(m.Files) == 1 && m.Files[0].Path == "" && !m.Files[0].Dir
 	for _, f := range m.Files {
-		if !single && (f.Path == "" || !filepath.IsLocal(filepath.FromSlash(f.Path)) || strings.Contains(f.Path, `\`)) {
+		if !single && !safePath(f.Path) {
 			return fmt.Errorf("refusing unsafe path %q", f.Path)
 		}
-		if seen[f.Path] {
+		key := strings.ToLower(f.Path)
+		if seen[key] {
 			return fmt.Errorf("duplicate path %q", f.Path)
 		}
-		seen[f.Path] = true
-		if f.Size < 0 || (f.Dir && f.Size != 0) {
+		seen[key] = true
+		if f.Size < 0 || f.Size > MaxFileSize || (f.Dir && f.Size != 0) {
 			return fmt.Errorf("bad size for %q", f.Path)
 		}
 		total += f.Size
+		if total > MaxTotal {
+			return errors.New("transfer is unreasonably large")
+		}
 	}
 	if total != m.Total {
 		return errors.New("manifest total does not add up")
 	}
 	return nil
+}
+
+// Limits on what a peer may propose. They are far above any real use and
+// keep sizes clear of overflow.
+const (
+	MaxFileSize = 1 << 50 // 1 PiB
+	MaxTotal    = 1 << 52
+)
+
+// safePath accepts only plain, canonical relative paths: no "..", no
+// "." or empty parts, no backslashes, and no part ending in .ferry-part,
+// the suffix the receiver uses for files still arriving.
+func safePath(p string) bool {
+	if p == "" || path.Clean(p) != p || !filepath.IsLocal(filepath.FromSlash(p)) || strings.Contains(p, `\`) {
+		return false
+	}
+	for _, part := range strings.Split(p, "/") {
+		if part == "." || part == ".." || strings.HasSuffix(part, ".ferry-part") {
+			return false
+		}
+	}
+	return true
 }

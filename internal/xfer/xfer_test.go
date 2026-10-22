@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -134,5 +135,58 @@ func TestCheckRejectsEscapes(t *testing.T) {
 		if m.Check() == nil {
 			t.Errorf("name %q accepted", n)
 		}
+	}
+}
+
+func TestCheckRejectsCollisions(t *testing.T) {
+	bad := [][]File{
+		{{Path: "a.ferry-part", Size: 1}, {Path: "a", Size: 1}}, // part-file clash
+		{{Path: "x/a/../b", Size: 1}, {Path: "x/b", Size: 1}},   // two names, one file
+		{{Path: "./b", Size: 1}},
+		{{Path: "README", Size: 1}, {Path: "readme", Size: 1}}, // one file on macOS
+		{{Path: "a", Size: 1 << 62}, {Path: "b", Size: 1 << 62}, {Path: "c", Size: 1 << 62}, {Path: "d", Size: 1 << 62}},
+	}
+	for i, fs := range bad {
+		var total int64
+		for _, f := range fs {
+			total += f.Size
+		}
+		m := &Manifest{Name: "ok", Files: fs, Total: total}
+		if m.Check() == nil {
+			t.Errorf("case %d accepted", i)
+		}
+	}
+}
+
+func TestDotRootRenamed(t *testing.T) {
+	src := filepath.Join(t.TempDir(), ".git")
+	writeRandom(t, filepath.Join(src, "config"), 10)
+	dest := t.TempDir()
+	if err, r := transfer(t, context.Background(), src, dest, nil); err != nil || r.err != nil {
+		t.Fatal(err, r.err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, ".git")); err == nil {
+		t.Fatal("a .git folder was created in the destination")
+	}
+	if _, err := os.Stat(filepath.Join(dest, "dot-git", "config")); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Many files must not mean many open files or goroutines.
+func TestManyFiles(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "many")
+	for i := 0; i < 3000; i++ {
+		p := filepath.Join(src, fmt.Sprintf("d%02d", i%40), fmt.Sprintf("f%04d", i))
+		os.MkdirAll(filepath.Dir(p), 0o755)
+		os.WriteFile(p, []byte(fmt.Sprint(i)), 0o644)
+	}
+	dest := t.TempDir()
+	if err, r := transfer(t, context.Background(), src, dest, nil); err != nil || r.err != nil {
+		t.Fatal(err, r.err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "many", "d17", "f2017"))
+	if err != nil || string(got) != "2017" {
+		t.Fatal(string(got), err)
 	}
 }

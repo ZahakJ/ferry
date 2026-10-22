@@ -52,7 +52,11 @@ about once in two billion tries.
 
 **A paired contact** can send you messages and files, and can see that you
 are online. They cannot make your machine run anything. ferry never
-executes received content; fetched files lose their execute bit; the MCP
+executes received content; fetched files lose their execute bit and are
+named `ferry-<n>-<name>`, and a received folder named like `.git` or
+`.envrc` is saved as `dot-git`, so nothing lands where a tool would act on
+it by name; a contact can run one transfer at a time, and only if the
+files fit in the free space; the MCP
 server tells the model that received text is untrusted and is not to be
 followed without the user's consent. A future job runner (running
 commands on request) will be off by default and need a per-contact

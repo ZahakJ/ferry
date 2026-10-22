@@ -169,7 +169,8 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 	if ls.Type != "lanes" || ls.Lane < 1 || ls.Lane > 32 {
 		return nil, errors.New("unexpected signaling message")
 	}
-	o.Lanes = max(o.Lanes, ls.Lane)
+	// A peer may ask for more lanes than we would, but not without bound.
+	o.Lanes = max(o.Lanes, min(ls.Lane, 16))
 
 	l := &Link{done: make(chan struct{})}
 	cfg := webrtc.Configuration{ICEServers: o.ICEServers}

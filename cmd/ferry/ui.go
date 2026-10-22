@@ -220,3 +220,22 @@ func human(d time.Duration) string {
 		return fmt.Sprintf("%dh%02dm", int(d.Hours()), int(d.Minutes())%60)
 	}
 }
+
+// clean makes text that came from someone else safe to print on a
+// terminal: control characters (which could move the cursor, rewrite the
+// screen or change the title) and bidirectional overrides (which could
+// make text read differently from what it is) become "?". Newlines and
+// tabs stay.
+func clean(s string) string {
+	return strings.Map(func(r rune) rune {
+		switch {
+		case r == '\n' || r == '\t':
+			return r
+		case r < 0x20, r == 0x7f, r >= 0x80 && r <= 0x9f:
+			return '?'
+		case r >= 0x202a && r <= 0x202e, r >= 0x2066 && r <= 0x2069:
+			return '?'
+		}
+		return r
+	}, s)
+}
