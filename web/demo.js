@@ -13,7 +13,9 @@
 	var SVG = "http://www.w3.org/2000/svg";
 
 	function esc(s) {
-		return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+		return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+			// A number and its unit stay together when a line wraps.
+			.replace(/(\d) (GB|MB\/s)/g, "$1\u00a0$2");
 	}
 
 	// A line is [cls, text] pairs; cls is a span class or "".
@@ -117,18 +119,35 @@
 	var words = code.split("-").slice(1);
 	var total = 2.1;
 
-	function bar(pct) {
-		var w = 14, n = Math.round(pct / 100 * w);
-		return [["g", "━".repeat(n)], ["d", "━".repeat(w - n)]];
+	// cols is how many characters fit on one line of a terminal.
+	function cols(el) {
+		var s = document.createElement("span");
+		s.textContent = "0000000000";
+		s.style.position = "absolute";
+		s.style.visibility = "hidden";
+		el.appendChild(s);
+		var cw = s.getBoundingClientRect().width / 10;
+		el.removeChild(s);
+		var cs = getComputedStyle(el);
+		var inner = el.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+		return cw > 0 ? Math.floor(inner / cw) : 80;
 	}
 
-	function progress(pct) {
+	// progress draws ferry's progress line the way ferry does on a terminal
+	// this wide: the full line if it fits, else shorter ones (see ui.go).
+	function progress(arrow, pct, width, full) {
 		var done = (total * pct / 100).toFixed(1);
 		var rate = (108 + Math.round(Math.sin(pct / 9) * 6)).toFixed(1);
 		var left = Math.max(0, Math.round((100 - pct) / 100 * 19));
-		var tail = pct < 100 ? "  " + rate + " MB/s · " + left + "s left" : "";
-		var p = ("    " + pct.toFixed(1)).slice(-5);
-		return bar(pct).concat([["", " ↓ " + p + "%  " + done + " GB of " + total + " GB" + tail]]);
+		var p = arrow + " " + ("    " + pct.toFixed(1)).slice(-5) + "%";
+		var speed = pct < 100 ? "  " + rate + " MB/s" : "";
+		var line = full ? p + "  " + done + " GB of " + total + " GB" + speed + (pct < 100 ? " · " + left + "s left" : "") : p;
+		var w = 14;
+		[p + "  " + done + " GB" + speed, p].forEach(function (short) {
+			if (w + 1 + line.length >= width) { w = 8; line = short; }
+		});
+		var n = Math.round(pct / 100 * w);
+		return [["g", "━".repeat(n)], ["d", "━".repeat(w - n)], ["", " " + line]];
 	}
 
 	// Steps: [delay ms, function].
@@ -162,8 +181,8 @@
 		for (var p = 0; p <= 100; p += 2.5) {
 			(function (pct) {
 				s.push([90, function () {
-					right.live = html(progress(pct));
-					left.live = html(bar(pct).concat([["", " ↑ " + ("    " + pct.toFixed(1)).slice(-5) + "%"]]));
+					right.live = html(progress("↓", pct, cols(R), true));
+					left.live = html(progress("↑", pct, cols(L), true));
 					sail(pct);
 					say("crossing · " + Math.round(pct) + "%");
 				}]);
@@ -209,14 +228,14 @@
 
 	document.getElementById("replay").addEventListener("click", play);
 
-	// Start when the demo scrolls into view, once.
-	if ("IntersectionObserver" in window) {
+	// Start when the demo scrolls into view, once; with reduced motion, now.
+	if (reduce || !("IntersectionObserver" in window)) {
+		play(); // nothing moves, so show the finished picture straight away
+	} else {
 		var seen = false;
 		new IntersectionObserver(function (es, obs) {
 			if (!seen && es[0].isIntersecting) { seen = true; obs.disconnect(); play(); }
 		}, { threshold: 0.3 }).observe(L);
-	} else {
-		play();
 	}
 
 	// Copy buttons.

@@ -137,7 +137,7 @@ pre {
 /* ---- hero ---- */
 
 .hero { padding-top: 3rem; padding-bottom: 1.5rem; display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 2.5rem; align-items: center; }
-@media (max-width: 860px) { .hero { grid-template-columns: 1fr; gap: 1rem; } }
+@media (max-width: 860px) { .hero { grid-template-columns: minmax(0, 1fr); gap: 1rem; padding-top: 2rem; } }
 .hero h1 {
 	font: 800 clamp(2.5rem, 6.4vw, 4.6rem)/0.98 var(--sans);
 	letter-spacing: -0.045em;
@@ -187,7 +187,7 @@ pre {
 
 /* ---- the strait: the signature crossing ---- */
 
-.strait { margin: 1.5rem 0 0; }
+.strait { margin: 1.5rem 0 1rem; }
 .strait svg { display: block; width: 100%; height: auto; overflow: visible; }
 .strait .sea { fill: var(--sea); }
 .strait .deep { fill: var(--sea-deep); }
@@ -231,8 +231,8 @@ pre {
 
 /* ---- demo terminals, one on each shore ---- */
 
-.demo { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 0 0 0.5rem; }
-@media (max-width: 760px) { .demo { grid-template-columns: 1fr; } }
+.demo { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin: 0 0 0.5rem; }
+@media (max-width: 760px) { .demo { grid-template-columns: minmax(0, 1fr); } }
 .term {
 	background: var(--term-bg);
 	color: var(--term-ink);
@@ -275,7 +275,7 @@ section.band h2 { font: 800 clamp(1.8rem, 4vw, 2.6rem)/1.05 var(--sans); margin:
 section.band p.intro { color: var(--ink-soft); max-width: var(--measure); margin: 0 0 2.2rem; font-size: 1.05rem; }
 
 /* The route: four stops on one line, each marked with its numeral pennant. */
-.route { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; padding: 0; margin: 0; }
+.route { position: relative; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1.5rem; padding: 0; margin: 0; }
 .route::before {
 	content: "";
 	position: absolute;
@@ -283,7 +283,7 @@ section.band p.intro { color: var(--ink-soft); max-width: var(--measure); margin
 	border-top: 2px dashed var(--ink-faint);
 }
 @media (max-width: 860px) {
-	.route { grid-template-columns: 1fr; gap: 1.6rem; }
+	.route { grid-template-columns: minmax(0, 1fr); gap: 1.6rem; }
 	.route::before { left: 0.95rem; right: auto; top: 0.5rem; bottom: 0.5rem; border-top: 0; border-left: 2px dashed var(--ink-faint); }
 	.route li { padding-left: 3rem; }
 	.route .pennant { position: absolute; left: 0; top: 0; }
@@ -317,8 +317,8 @@ section.band p.intro { color: var(--ink-soft); max-width: var(--measure); margin
 .diagram .tag { fill: var(--accent); font: 700 12px var(--mono); letter-spacing: 0.06em; }
 .diagram .lp { fill: var(--port); } .diagram .ls { fill: var(--starboard); }
 
-.split { display: grid; grid-template-columns: 1fr 1fr; gap: 3rem; align-items: start; }
-@media (max-width: 860px) { .split { grid-template-columns: 1fr; gap: 2rem; } }
+.split { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3rem; align-items: start; }
+@media (max-width: 860px) { .split { grid-template-columns: minmax(0, 1fr); gap: 2rem; } }
 
 table { border-collapse: collapse; width: 100%; font-size: 0.95rem; }
 th, td { text-align: left; padding: 0.6rem 0.7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
@@ -349,11 +349,11 @@ td.num.ours { color: var(--ink); font-weight: 700; }
 	text-transform: uppercase;
 	color: var(--ink-soft);
 }
-.manifest ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; }
-@media (max-width: 760px) { .manifest ul { grid-template-columns: 1fr; } }
+.manifest ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 760px) { .manifest ul { grid-template-columns: minmax(0, 1fr); } }
 .manifest li {
 	display: grid;
-	grid-template-columns: 2rem 1fr;
+	grid-template-columns: 2rem minmax(0, 1fr);
 	gap: 0.2rem 0.6rem;
 	padding: 1rem 1.1rem;
 	border-bottom: 1px dashed var(--line);
@@ -393,7 +393,7 @@ footer a { color: var(--ink-soft); }
 /* ---- docs ---- */
 
 .docs { display: grid; grid-template-columns: 13.5rem minmax(0, 1fr); gap: 3rem; padding-top: 1.5rem; padding-bottom: 4rem; }
-@media (max-width: 820px) { .docs { grid-template-columns: 1fr; gap: 1rem; } }
+@media (max-width: 820px) { .docs { grid-template-columns: minmax(0, 1fr); gap: 1rem; } }
 /* The page list is a route: a dashed line with a stop for each page. */
 .docs aside nav { position: sticky; top: 1rem; display: flex; flex-direction: column; font-size: 0.95rem; border-left: 2px dashed var(--line); margin-left: 0.4rem; }
 @media (max-width: 820px) { .docs aside nav { position: static; flex-direction: row; flex-wrap: wrap; gap: 0.2rem 1.1rem; border-left: 0; margin-left: 0; } }
@@ -433,3 +433,43 @@ footer a { color: var(--ink-soft); }
 	.shores { font-size: 0.7rem; }
 	.shores .status { display: none; }
 }
+
+/* Phones: nothing may be wider than the screen. */
+img, svg, video { max-width: 100%; }
+@media (max-width: 600px) {
+	body { font-size: 16.5px; }
+	.hero h1 { font-size: clamp(2.3rem, 11vw, 3rem); }
+	.copy { display: flex; width: 100%; font-size: 0.86rem; }
+	.copy code { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+	.ctas .btn { flex: 1 1 auto; text-align: center; }
+	th, td.num { white-space: normal; }
+	table { font-size: 0.88rem; }
+	th, td { padding: 0.5rem 0.4rem; }
+	.big { font-size: 2.6rem; }
+	section.band { padding: 3.2rem 0; }
+	.term { font-size: 0.74rem; min-height: 0; }
+}
+.diagram .tall .label { font-size: 16px; }
+.diagram .tall .sub { font-size: 13.5px; }
+.diagram .tall .tag { font-size: 14px; }
+
+/* Docs tables on phones: each row becomes a card of "heading: value" lines
+   (sitegen copies each column heading onto its cells as data-label). */
+@media (max-width: 600px) {
+	.docs article table { display: block; overflow: visible; border: 0; }
+	.docs article thead { display: none; }
+	.docs article tbody, .docs article tr, .docs article td { display: block; }
+	.docs article tr { border: 1px solid var(--line); border-radius: var(--radius); background: var(--raised); padding: 0.5rem 0.8rem; margin: 0 0 0.7rem; }
+	.docs article td { border: 0; padding: 0.2rem 0; white-space: normal; }
+	.docs article td[data-label]:not([data-label=""])::before {
+		content: attr(data-label);
+		display: block;
+		font: 600 0.68rem/1.4 var(--mono);
+		letter-spacing: 0.1em;
+		text-transform: uppercase;
+		color: var(--ink-faint);
+	}
+	.docs article td:empty { display: none; }
+	.docs article td code { overflow-wrap: normal; }
+}
+@media (max-width: 430px) { .top nav { gap: 1rem; } .top nav .wide-only { display: none; } }

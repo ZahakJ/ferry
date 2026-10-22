@@ -160,8 +160,40 @@ func render(p *page, src []byte) error {
 		return `href="` + slug + `.html` + sub[2] + `"`
 	})
 	s = strings.ReplaceAll(s, `href="SECURITY.md"`, `href="security.html"`)
-	p.Body = template.HTML(s)
+	p.Body = template.HTML(labelCells(s))
 	return nil
+}
+
+var (
+	tableRE = regexp.MustCompile(`(?s)<table>.*?</table>`)
+	thRE    = regexp.MustCompile(`(?s)<th[^>]*>(.*?)</th>`)
+	rowRE   = regexp.MustCompile(`(?s)<tr>(.*?)</tr>`)
+	tdRE    = regexp.MustCompile(`<td([^>]*)>`)
+	tagRE   = regexp.MustCompile(`<[^>]+>`)
+)
+
+// labelCells gives each table cell its column's heading as data-label, so
+// that on a phone the stylesheet can show every row as a small card of
+// "heading: value" lines instead of a table wider than the screen.
+func labelCells(s string) string {
+	return tableRE.ReplaceAllStringFunc(s, func(t string) string {
+		var heads []string
+		for _, m := range thRE.FindAllStringSubmatch(t, -1) {
+			heads = append(heads, strings.TrimSpace(tagRE.ReplaceAllString(m[1], "")))
+		}
+		return rowRE.ReplaceAllStringFunc(t, func(row string) string {
+			i := 0
+			return tdRE.ReplaceAllStringFunc(row, func(td string) string {
+				attrs := tdRE.FindStringSubmatch(td)[1]
+				label := ""
+				if i < len(heads) {
+					label = heads[i]
+				}
+				i++
+				return `<td` + attrs + ` data-label="` + template.HTMLEscapeString(label) + `">`
+			})
+		})
+	})
 }
 
 func copyFile(src, dst string) error {

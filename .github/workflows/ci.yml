@@ -16,7 +16,8 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - run: test -z "$(gofmt -l cmd internal test)"
+      - run: test -z "$(gofmt -l cmd internal test tools)"
       - run: go vet ./...
       - run: go test ./...
       - run: go build -trimpath -o ferry ./cmd/ferry
+      - run: go run ./tools/sitegen -ferry ./ferry -out site && go run ./tools/sitecheck -site site

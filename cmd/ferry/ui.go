@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/term"
 )
@@ -177,7 +178,21 @@ func (p *progress) update(done, total int64) {
 		fmt.Fprintln(os.Stderr, line)
 		return
 	}
+	// On a narrow terminal (a phone, a split pane) the line must not wrap,
+	// or each redraw leaves a stray line behind: drop the total and the
+	// time left, then the speed, and shorten the bar.
 	w := 14
+	if cols, _, err := term.GetSize(int(os.Stderr.Fd())); err == nil && cols > 0 {
+		for _, short := range []string{
+			fmt.Sprintf("%s %5.1f%%  %s%s", p.label, pct, size(done), speed),
+			fmt.Sprintf("%s %5.1f%%", p.label, pct),
+		} {
+			if w+1+utf8.RuneCountInString(line) < cols {
+				break
+			}
+			w, line = 8, short
+		}
+	}
 	fill := int(pct / 100 * float64(w))
 	bar := p.o.green(strings.Repeat("━", fill)) + p.o.dim(strings.Repeat("━", w-fill))
 	fmt.Fprintf(os.Stderr, "\r\033[K%s %s", bar, line)

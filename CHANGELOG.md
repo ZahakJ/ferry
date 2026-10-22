@@ -13,6 +13,11 @@ exit codes are part of the public interface.
   2 minutes (Concord v0.59.1): it carries signaling only, never data.
 - The site has a phone layout for the crossing and the diagram; the README
   has a banner and an animated demo, drawn by `tools/mediagen`.
+- The progress line fits narrow terminals: it drops the total and the time
+  left, then the speed, rather than wrapping.
+- The site fits every width from 320 px up with no sideways scrolling; docs
+  tables become stacked cards on phones. `tools/sitecheck` checks every
+  page at seven widths in both themes on each build.
 
 ## [0.1.0] - 2026-10-22
 

@@ -17,7 +17,7 @@
 	</a>
 	<nav>
 		<a href="docs/quickstart.html">Docs</a>
-		<a href="docs/pairing.html">How it works</a>
+		<a class="wide-only" href="docs/pairing.html">How it works</a>
 		<a href="docs/mcp.html">For agents</a>
 		<a href="https://github.com/ZahakJ/ferry">GitHub</a>
 	</nav>
@@ -58,7 +58,7 @@
 			<line class="mast" x1="960" y1="68" x2="960" y2="14"/>
 			<g class="hoist hoist-l"><path class="line" d="M40 16 L140 52"/><g class="flags"></g></g>
 			<g class="hoist hoist-r"><path class="line" d="M960 16 L860 52"/><g class="flags"></g></g>
-			<g class="crate"><rect class="cargo" x="796" y="104" width="46" height="22" rx="2"/><text x="819" y="119" text-anchor="middle">✓ 2.1 GB</text></g>
+			<g class="crate"><rect class="cargo" x="803" y="104" width="46" height="22" rx="2"/><text x="826" y="119" text-anchor="middle">✓ 2.1 GB</text></g>
 			<path class="wake" d="M214 140 L214 140"/>
 			<g class="boat" transform="translate(214 0)"><path class="hull" d="M0 126 L78 126 L70 140 L8 140 Z"/><rect class="cabin" x="12" y="110" width="46" height="16" rx="2"/><rect class="funnel" x="42" y="98" width="9" height="12"/><rect class="cargo" x="18" y="114" width="12" height="8"/><rect class="cargo" x="32" y="114" width="8" height="8"/><circle class="light-port" cx="4" cy="129" r="2.6"/><circle class="light-stbd" cx="74" cy="129" r="2.6"/></g>
 		</svg>
@@ -122,26 +122,25 @@
 				<text class="tag" x="430" y="160" text-anchor="middle">ENCRYPTED, DIRECT</text>
 				<text class="sub" x="430" y="224" text-anchor="middle">machine to machine, never through a server</text>
 			</svg>
-			<svg class="tall" viewBox="0 0 360 520" role="img">
-				<rect class="node" x="80" y="10" width="200" height="66" rx="6"/>
-				<text class="label" x="180" y="38" text-anchor="middle">Rendezvous</text>
-				<text class="sub" x="180" y="58" text-anchor="middle">introduces, sees nothing</text>
-				<rect class="node" x="20" y="150" width="200" height="76" rx="6"/>
-				<text class="label" x="120" y="182" text-anchor="middle">Your machine</text>
-				<text class="sub" x="120" y="204" text-anchor="middle">behind your router</text>
-				<circle class="lp" cx="36" cy="164" r="4"/>
-				<rect class="node" x="20" y="420" width="200" height="76" rx="6"/>
-				<text class="label" x="120" y="452" text-anchor="middle">Their machine</text>
-				<text class="sub" x="120" y="474" text-anchor="middle">behind theirs</text>
-				<circle class="ls" cx="36" cy="434" r="4"/>
-				<path class="meet" d="M220 180 C 300 170, 320 110, 280 50"/>
-				<path class="meet" d="M220 450 C 340 430, 350 120, 280 60"/>
-				<path class="direct" d="M120 226 L120 420"/>
-				<path class="flow" d="M120 226 L120 420"/>
-				<text class="tag" x="136" y="306">ENCRYPTED,</text>
-				<text class="tag" x="136" y="324">DIRECT</text>
-				<text class="sub" x="136" y="346">machine to machine,</text>
-				<text class="sub" x="136" y="364">never through a server</text>
+			<svg class="tall" viewBox="0 0 400 530" role="img">
+				<path class="meet" d="M130 150 L130 76"/>
+				<path class="meet" d="M230 478 C 392 470, 392 52, 240 43"/>
+				<rect class="node" x="20" y="10" width="220" height="66" rx="6"/>
+				<text class="label" x="130" y="39" text-anchor="middle">Rendezvous</text>
+				<text class="sub" x="130" y="61" text-anchor="middle">introduces, sees nothing</text>
+				<rect class="node" x="30" y="150" width="200" height="76" rx="6"/>
+				<text class="label" x="130" y="184" text-anchor="middle">Your machine</text>
+				<text class="sub" x="130" y="207" text-anchor="middle">behind your router</text>
+				<circle class="lp" cx="46" cy="164" r="4.5"/>
+				<rect class="node" x="30" y="440" width="200" height="76" rx="6"/>
+				<text class="label" x="130" y="474" text-anchor="middle">Their machine</text>
+				<text class="sub" x="130" y="497" text-anchor="middle">behind theirs</text>
+				<circle class="ls" cx="46" cy="454" r="4.5"/>
+				<path class="direct" d="M130 226 L130 440"/>
+				<path class="flow" d="M130 226 L130 440"/>
+				<text class="tag" x="148" y="312">ENCRYPTED, DIRECT</text>
+				<text class="sub" x="148" y="338">machine to machine,</text>
+				<text class="sub" x="148" y="358">never through a server</text>
 			</svg>
 		</div>
 		<p style="margin-top:2rem"><a href="docs/pairing.html">The whole story, from first principles →</a></p>

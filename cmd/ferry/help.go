@@ -168,11 +168,11 @@ func reference(ctx context.Context, o *out) error {
 		if len(flags) > 0 {
 			b.WriteString("| flag | default | meaning |\n|---|---|---|\n")
 			for _, f := range flags {
-				def := f.DefValue
-				if def == "" {
-					def = " "
+				def := ""
+				if f.DefValue != "" {
+					def = "`" + f.DefValue + "`"
 				}
-				fmt.Fprintf(&b, "| `--%s` | `%s` | %s |\n", f.Name, def, f.Usage)
+				fmt.Fprintf(&b, "| `--%s` | %s | %s |\n", f.Name, def, f.Usage)
 			}
 			b.WriteString("\n")
 		}

@@ -301,7 +301,7 @@ func demo(p palette) string {
 		}
 	}
 	bar(&right, "↓", true)
-	bar(&left, "↑", false)
+	bar(&left, "↑", true)
 	left.line--
 	right.line--
 
