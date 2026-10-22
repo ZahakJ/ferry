@@ -167,6 +167,15 @@ func launch(bin string) (*browser, error) {
 		}
 	}
 	if bin == "" {
+		// macOS installs Chrome as an app bundle, off PATH.
+		for _, p := range []string{"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome", "/Applications/Chromium.app/Contents/MacOS/Chromium"} {
+			if _, err := os.Stat(p); err == nil {
+				bin = p
+				break
+			}
+		}
+	}
+	if bin == "" {
 		return nil, errors.New("no Chromium found; pass -chrome")
 	}
 	profile, err := os.MkdirTemp("", "sitecheck-")
