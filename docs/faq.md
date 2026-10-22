@@ -35,8 +35,9 @@ attackers who can try many times offline. Here nobody can.
 ### How fast is it?
 
 As fast as the slower of the two internet connections, in most cases. On
-a 40 ms path ferry moved 1.4 to 2.1 Gbit/s in testing; with 0.5% packet
-loss, 0.65 Gbit/s, where a single TCP stream managed 0.4. See
+a 40 ms path ferry moved 0.9 to 2.1 Gbit/s in testing (both ends on one
+busy machine); with 0.5% packet loss, 0.64 to 0.69, where a single TCP
+stream managed 0.4. See
 [measurements](throughput.html).
 
 ### Does it work behind a company or university network?

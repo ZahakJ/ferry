@@ -32,9 +32,13 @@ unshaped case and numbers vary between runs.
 
 | path | ferry, 8 lanes | ferry, 16 lanes |
 |---|---|---|
-| LAN-like (veth, no shaping) | 2.3-3.3 Gbps | 1.4-3.2 Gbps |
-| 40 ms RTT, no loss | 0.68-1.46 Gbps | 1.4-2.1 Gbps |
-| 40 ms RTT, 0.5% loss | 0.38-0.39 Gbps | 0.65-0.68 Gbps |
+| LAN-like (veth, no shaping) | 2.3-3.3 Gbps | 1.2-3.2 Gbps |
+| 40 ms RTT, no loss | 0.68-1.46 Gbps | 0.9-2.1 Gbps |
+| 40 ms RTT, 0.5% loss | 0.38-0.39 Gbps | 0.64-0.69 Gbps |
+
+The low ends were measured with the machine's load average around 10 from
+unrelated work; the same runs on the previous commit gave the same numbers,
+so they reflect contention, not the code.
 
 Sixteen lanes is the default for transfers of 512 MB and up; smaller ones
 use fewer (at least 2). `ferry config lanes N` fixes the number.

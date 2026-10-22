@@ -419,25 +419,31 @@ func (b bitmap) claim(i int) bool {
 }
 
 // handles keeps a small number of part files open, so a transfer of a
-// million files does not need a million file descriptors.
+// million files does not need a million file descriptors. The lock only
+// guards the table; reads and writes run in parallel, and a file in use
+// is never closed under them.
 type handles struct {
 	mu    sync.Mutex
 	files []*rfile
-	open  map[int]*os.File
-	order []int
+	open  map[int]*handle
+	order []int // least recently used first
+}
+
+type handle struct {
+	fh   *os.File
+	refs int
+	gone bool // evicted or finished; close when the last user is done
 }
 
 const maxOpen = 32
 
-func (h *handles) get(i int) (*os.File, error) {
-	if fh, ok := h.open[i]; ok {
-		for k, x := range h.order {
-			if x == i {
-				h.order = append(append(h.order[:k:k], h.order[k+1:]...), i)
-				break
-			}
-		}
-		return fh, nil
+func (h *handles) acquire(i int) (*handle, error) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if x, ok := h.open[i]; ok {
+		x.refs++
+		h.touch(i)
+		return x, nil
 	}
 	rf := h.files[i]
 	fh, err := os.OpenFile(rf.part, os.O_RDWR|os.O_CREATE, 0o600)
@@ -449,75 +455,109 @@ func (h *handles) get(i int) (*os.File, error) {
 		return nil, fmt.Errorf("not enough room for %s: %w", rf.f.Path, err)
 	}
 	if len(h.order) >= maxOpen {
-		old := h.order[0]
-		h.order = h.order[1:]
-		h.open[old].Sync()
-		h.open[old].Close()
-		delete(h.open, old)
+		h.evict(h.order[0])
 	}
-	h.open[i] = fh
+	x := &handle{fh: fh, refs: 1}
+	h.open[i] = x
 	h.order = append(h.order, i)
-	return fh, nil
+	return x, nil
 }
 
-func (h *handles) writeAt(i int, b []byte, off int64) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	fh, err := h.get(i)
-	if err != nil {
-		return err
+func (h *handles) touch(i int) {
+	for k, v := range h.order {
+		if v == i {
+			h.order = append(append(h.order[:k:k], h.order[k+1:]...), i)
+			return
+		}
 	}
-	_, err = fh.WriteAt(b, off)
-	return err
 }
 
-func (h *handles) readAt(i int, b []byte, off int64) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	fh, err := h.get(i)
-	if err != nil {
-		return err
-	}
-	_, err = fh.ReadAt(b, off)
-	return err
-}
-
-// finish makes sure file i exists, flushes and closes it.
-func (h *handles) finish(i int) error {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	fh, err := h.get(i)
-	if err != nil {
-		return err
-	}
-	err = fh.Sync()
-	fh.Close()
+// evict drops file i from the table; it closes now if idle, else when
+// its last user releases it. The caller holds the lock.
+func (h *handles) evict(i int) *handle {
+	x := h.open[i]
 	delete(h.open, i)
-	for k, x := range h.order {
-		if x == i {
+	for k, v := range h.order {
+		if v == i {
 			h.order = append(h.order[:k], h.order[k+1:]...)
 			break
 		}
 	}
+	if x != nil {
+		x.gone = true
+		if x.refs == 0 {
+			x.fh.Sync()
+			x.fh.Close()
+		}
+	}
+	return x
+}
+
+func (h *handles) release(x *handle) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	x.refs--
+	if x.gone && x.refs == 0 {
+		x.fh.Sync()
+		x.fh.Close()
+	}
+}
+
+func (h *handles) writeAt(i int, b []byte, off int64) error {
+	x, err := h.acquire(i)
+	if err != nil {
+		return err
+	}
+	defer h.release(x)
+	_, err = x.fh.WriteAt(b, off)
+	return err
+}
+
+func (h *handles) readAt(i int, b []byte, off int64) error {
+	x, err := h.acquire(i)
+	if err != nil {
+		return err
+	}
+	defer h.release(x)
+	_, err = x.fh.ReadAt(b, off)
+	return err
+}
+
+// finish makes sure file i exists on disk, flushed, and closes it. Every
+// piece is written by then, so no lane still uses it.
+func (h *handles) finish(i int) error {
+	x, err := h.acquire(i)
+	if err != nil {
+		return err
+	}
+	err = x.fh.Sync()
+	h.mu.Lock()
+	h.evict(i)
+	h.mu.Unlock()
+	h.release(x)
 	return err
 }
 
 func (h *handles) syncAll() {
 	h.mu.Lock()
-	defer h.mu.Unlock()
-	for _, fh := range h.open {
-		fh.Sync()
+	var xs []*handle
+	for _, x := range h.open {
+		x.refs++
+		xs = append(xs, x)
+	}
+	h.mu.Unlock()
+	for _, x := range xs {
+		x.fh.Sync()
+		h.release(x)
 	}
 }
 
 func (h *handles) closeAll() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for _, fh := range h.open {
-		fh.Close()
+	for i := range h.open {
+		h.evict(i)
 	}
-	h.open = map[int]*os.File{}
-	h.order = nil
 }
 
 // rootName is the name the transfer gets in dest. A name starting with a
@@ -552,7 +592,7 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	rootPath := filepath.Join(dest, st.Root)
 
 	files := make([]*rfile, len(m.Files))
-	h := &handles{files: files, open: map[int]*os.File{}}
+	h := &handles{files: files, open: map[int]*handle{}}
 	defer h.closeAll()
 	var held atomic.Int64
 	reply := ctl{T: "accept", Partial: map[string]string{}}
