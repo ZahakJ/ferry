@@ -5,3 +5,4 @@ RESUME.md
 STATUS.md
 /test/tmp/
 /site/
+/deploy/fly/*.seed

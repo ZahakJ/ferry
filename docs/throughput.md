@@ -46,3 +46,20 @@ use fewer (at least 2). `ferry config lanes N` fixes the number.
 On loopback (one machine, a local rendezvous, 16 lanes), ferry moves 2 GB
 end to end in 7.9 seconds, 2.0 Gbps, including both BLAKE3 checks and
 writing to disk.
+
+## Through the rendezvous relay
+
+For peers that cannot connect directly, ferry's data could also travel over
+the rendezvous's libp2p circuit relay on TCP. That fallback is planned but
+not built yet. Concord's relay puts no time or byte cap on circuits, and
+raw streams through it were measured with the rendezvous on the same
+machine (`FERRY_RELAY_BULK=<MB> go test -run TestRelayBulk ./internal/rv`):
+
+| path | 1 stream | 4 streams |
+|---|---|---|
+| loopback | 1.7–1.8 Gbps | 2.0–2.1 Gbps |
+| 20 ms RTT on each leg | 0.51 Gbps | 0.64 Gbps |
+| same, 0.25% loss on each leg | 0.30 Gbps | 0.45 Gbps |
+
+On a real deployment the relay machine's CPU and bandwidth set the
+limit; see `deploy/fly/README.md`.

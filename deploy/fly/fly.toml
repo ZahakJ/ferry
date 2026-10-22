@@ -1,0 +1,38 @@
+# ferry's rendezvous on fly.io. See README.md in this folder.
+#   cd deploy/fly && fly deploy
+app = "ferry-rdv-zahak"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "4001"
+  # Secrets, set with `fly secrets set`, never here:
+  #   CONCORD_RELAY_SEED   32-byte hex; fixes the peer ID every ferry ships with
+  #   CONCORD_PUBLIC_HOST  ferry-rdv-zahak.fly.dev; the log then prints the address
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+
+# Raw libp2p on 4001: TCP (works everywhere, and carries the relay fallback)
+# and QUIC over UDP (IPv4 only on fly). No HTTP service: ferry needs none
+# while there is no TURN, so Concord's guest and booking pages stay internal.
+[[services]]
+  internal_port = 4001
+  protocol = "tcp"
+  auto_stop_machines = "off"
+  min_machines_running = 1
+  [[services.ports]]
+    port = 4001
+  [[services.tcp_checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[services]]
+  internal_port = 4001
+  protocol = "udp"
+  [[services.ports]]
+    port = 4001
