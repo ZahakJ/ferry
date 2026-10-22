@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZahakJ/ferry/internal/agent"
 	"github.com/ZahakJ/ferry/internal/keys"
 	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/pair"
@@ -77,15 +78,28 @@ func cmdSend(ctx context.Context, o *out, args []string) error {
 			return err
 		}
 		o.say("Connected. %s", o.dim("(both sides see: "+s.SAS+")"))
-	} else {
-		s, err = dialContact(ctx, o, cfg, to, "files")
-		if err != nil {
-			return err
-		}
-		o.say("Sending %s to %s.", what, to)
+		defer s.Close()
+		return sendOver(ctx, o, s, path, m, *lanes)
 	}
-	defer s.Close()
-	return sendOver(ctx, o, s, path, m, *lanes)
+	return sendToContact(ctx, o, to, path, m)
+}
+
+func sendToContact(ctx context.Context, o *out, to, path string, m *xfer.Manifest) error {
+	a, err := openAgent()
+	if err != nil {
+		return err
+	}
+	defer a.Close()
+	o.say("Sending %s to %s.", describe(m), to)
+	p := o.progress("↑", m.Total)
+	r, err := a.SendFile(ctx, to, path, p.update)
+	p.end()
+	if err != nil {
+		return err
+	}
+	o.say("%s Sent %s in %s (%s/s, %s).", o.green("✓"), size(r.Bytes), human(time.Duration(r.Seconds*float64(time.Second))), size(int64(float64(r.Bytes)/max(r.Seconds, 0.001))), r.Path)
+	o.event("done", map[string]any{"name": r.Name, "bytes": r.Bytes, "seconds": r.Seconds, "path": r.Path})
+	return nil
 }
 
 func sendOver(ctx context.Context, o *out, s *session.Session, path string, m *xfer.Manifest, lanes int) error {
@@ -211,7 +225,7 @@ func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error
 	o.say("Receiving %s.", describe(m))
 	o.event("offer", map[string]any{"name": m.Name, "bytes": m.Total, "files": countFiles(m), "path": l.Path})
 	p := o.progress("↓", m.Total)
-	saved, err := xfer.Receive(ctx, l, offer, dest, p.update)
+	saved, err := xfer.Receive(ctx, l, offer, dest, p.update, nil)
 	p.end()
 	if err != nil {
 		if strings.Contains(err.Error(), "does not match") || strings.Contains(err.Error(), "integrity") {
@@ -234,6 +248,9 @@ func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error
 }
 
 func getFromContact(ctx context.Context, o *out, cfg *session.Config, from, dest string, lanes int) error {
+	if agent.Running() {
+		return usagef("`ferry up` is running, and it already receives files from contacts into %s; see them with `ferry files`", agent.FilesDir())
+	}
 	id, err := keys.Load()
 	if errors.Is(err, keys.ErrNoIdentity) {
 		return usagef("give a code (ferry get <code>), or pair with someone first (ferry pair)")

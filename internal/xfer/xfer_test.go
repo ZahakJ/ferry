@@ -42,7 +42,7 @@ func transfer(t *testing.T, ctx context.Context, src, dest string, onProgress Pr
 			done <- result{err: err}
 			return
 		}
-		s, err := Receive(ctx, b, o, dest, onProgress)
+		s, err := Receive(ctx, b, o, dest, onProgress, nil)
 		if err != nil {
 			b.Close() // as a dying process would
 		}

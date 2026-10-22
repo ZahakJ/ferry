@@ -71,6 +71,10 @@ func cmdPair(ctx context.Context, o *out, args []string) error {
 	if err != nil {
 		return err
 	}
+	// Open our mailbox now, so they can leave messages before we are next online.
+	if ep, err := session.Online(ctx, cfg, id); err == nil {
+		ep.Close()
+	}
 	o.say("%s Paired with %s. Both screens should show the same two words: %s", o.green("✓"), o.bold(saved), o.bold(s.SAS))
 	o.say("From now on:  ferry send %s ./file    ferry msg %s \"hello\"", saved, saved)
 	o.event("paired", map[string]any{"name": saved, "id": peer.ID(), "check": s.SAS})

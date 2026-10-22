@@ -266,6 +266,10 @@ func Online(ctx context.Context, cfg *Config, id *keys.Identity) (*Endpoint, err
 	if err != nil {
 		return nil, err
 	}
+	// Opening our mailbox lets contacts leave messages while we are away.
+	rctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	node.Register(rctx)
+	cancel()
 	return &Endpoint{ID: id, Node: node, cfg: cfg}, nil
 }
 

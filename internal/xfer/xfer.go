@@ -396,8 +396,10 @@ type rfile struct {
 }
 
 // Receive accepts an offer and writes it into dest. It resumes from any
-// earlier attempt at the same transfer. It returns the saved path.
-func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress Progress) (string, error) {
+// earlier attempt at the same transfer. It returns the saved path; onSaved,
+// if set, hears it as soon as the files are in place, a moment before
+// Receive returns.
+func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress Progress, onSaved func(path string)) (string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	m := o.Manifest
@@ -691,6 +693,9 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	}
 	os.Remove(statePath(dest, o.ID))
 	l.SendCtl(ctl{T: "complete", OK: true, Saved: st.Root})
+	if onSaved != nil {
+		onSaved(rootPath)
+	}
 	// Hanging up at once could discard the message above; wait for the
 	// sender to acknowledge it.
 	select {
