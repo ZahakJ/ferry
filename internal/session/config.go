@@ -38,8 +38,8 @@ type Config struct {
 }
 
 // DefaultRendezvous is used when neither config.json nor FERRY_RENDEZVOUS
-// names one. Empty until there is a public rendezvous to ship with.
-const DefaultRendezvous = ""
+// names one.
+const DefaultRendezvous = "/dns/ferry-rdv-zahak.fly.dev/tcp/4001/p2p/12D3KooWG3abzGo1rA3azY76kU91omQxcJDTwwHTzdR1QqgwuJsz"
 
 // DefaultRendezvousHTTP is its HTTP gateway, for TURN credentials.
 const DefaultRendezvousHTTP = ""
