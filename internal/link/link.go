@@ -21,6 +21,8 @@ import (
 
 	"github.com/pion/datachannel"
 	"github.com/pion/ice/v4"
+	"github.com/pion/transport/v5"
+	"github.com/pion/transport/v5/stdnet"
 	"github.com/pion/logging"
 	"github.com/pion/webrtc/v4"
 
@@ -50,7 +52,6 @@ type Options struct {
 // Link is an open connection.
 type Link struct {
 	pcs   []*webrtc.PeerConnection
-	socks []net.PacketConn
 	// Ctl is an ordered, reliable message channel for control.
 	Ctl datachannel.ReadWriteCloser
 	// Lanes are reliable, unordered message channels for bulk data.
@@ -82,7 +83,7 @@ func (l *Lane) Write(ctx context.Context, b []byte) error {
 	return err
 }
 
-func (o *Options) api() (*webrtc.API, net.PacketConn, error) {
+func (o *Options) api() (*webrtc.API, error) {
 	var s webrtc.SettingEngine
 	s.DetachDataChannels()
 	s.SetSCTPMaxReceiveBufferSize(sctpRecvBuf)
@@ -93,7 +94,11 @@ func (o *Options) api() (*webrtc.API, net.PacketConn, error) {
 	s.SetNetworkTypes([]webrtc.NetworkType{webrtc.NetworkTypeUDP4, webrtc.NetworkTypeUDP6})
 	if o.Loopback {
 		s.SetIncludeLoopbackCandidate(true)
+		s.SetInterfaceFilter(func(n string) bool { return n == "lo" })
+	} else if os.Getenv("FERRY_ALL_INTERFACES") == "" {
+		s.SetInterfaceFilter(usefulInterface)
 	}
+	s.SetIPFilter(func(ip net.IP) bool { return !ip.IsLinkLocalUnicast() })
 	s.SetICETimeouts(10*time.Second, 30*time.Second, 2*time.Second)
 	lf := logging.NewDefaultLoggerFactory()
 	lf.DefaultLogLevel = logging.LogLevelError
@@ -101,18 +106,12 @@ func (o *Options) api() (*webrtc.API, net.PacketConn, error) {
 		lf.DefaultLogLevel = logging.LogLevelDebug
 	}
 	s.LoggerFactory = lf
-	c, err := net.ListenUDP("udp", &net.UDPAddr{})
+	n, err := stdnet.NewNet()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	// Bigger socket buffers absorb the bursts that otherwise cost a
-	// retransmission timeout. The kernel caps this at net.core.rmem_max.
-	c.SetReadBuffer(sockBuf)
-	c.SetWriteBuffer(sockBuf)
-	s.SetICEUDPMux(ice.NewUniversalUDPMuxDefault(ice.UniversalUDPMuxParams{
-		Logger: lf.NewLogger("mux"), UDPConn: c,
-	}))
-	return webrtc.NewAPI(webrtc.WithSettingEngine(s)), c, nil
+	s.SetNet(bufNet{n})
+	return webrtc.NewAPI(webrtc.WithSettingEngine(s)), nil
 }
 
 type signal struct {
@@ -154,12 +153,11 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 	lanes := make([]*Lane, o.Lanes)
 
 	for i := 0; i < o.Lanes; i++ {
-		api, sock, err := o.api()
+		api, err := o.api()
 		if err != nil {
 			l.Close()
 			return nil, err
 		}
-		l.socks = append(l.socks, sock)
 		pc, err := api.NewPeerConnection(cfg)
 		if err != nil {
 			l.Close()
@@ -372,9 +370,6 @@ func (l *Link) Close() error {
 	for _, pc := range l.pcs {
 		pc.Close()
 	}
-	for _, s := range l.socks {
-		s.Close()
-	}
 	return nil
 }
 
@@ -386,4 +381,51 @@ func (l *Link) SendCtl(v any) error {
 	}
 	_, err = l.Ctl.Write(b)
 	return err
+}
+
+// virtualPrefixes name interfaces that only reach containers and VMs on
+// this machine. Offering them makes ICE try hundreds of hopeless pairs
+// before it finds the real one.
+var virtualPrefixes = []string{"docker", "br-", "veth", "virbr", "vmnet", "vboxnet", "cni", "flannel", "kube", "lxc", "lxd", "podman", "cali", "vnet"}
+
+func usefulInterface(name string) bool {
+	for _, p := range virtualPrefixes {
+		if strings.HasPrefix(name, p) {
+			return false
+		}
+	}
+	return true
+}
+
+// bufNet gives every UDP socket pion opens bigger buffers. They absorb
+// the bursts that otherwise cost a retransmission timeout. The kernel caps
+// them at net.core.rmem_max / wmem_max.
+type bufNet struct{ transport.Net }
+
+type buffered interface {
+	SetReadBuffer(int) error
+	SetWriteBuffer(int) error
+}
+
+func grow(c any) {
+	if b, ok := c.(buffered); ok {
+		b.SetReadBuffer(sockBuf)
+		b.SetWriteBuffer(sockBuf)
+	}
+}
+
+func (n bufNet) ListenUDP(network string, addr *net.UDPAddr) (transport.UDPConn, error) {
+	c, err := n.Net.ListenUDP(network, addr)
+	if err == nil {
+		grow(c)
+	}
+	return c, err
+}
+
+func (n bufNet) ListenPacket(network, address string) (net.PacketConn, error) {
+	c, err := n.Net.ListenPacket(network, address)
+	if err == nil {
+		grow(c)
+	}
+	return c, err
 }
