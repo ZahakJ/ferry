@@ -21,9 +21,9 @@ import (
 
 	"github.com/pion/datachannel"
 	"github.com/pion/ice/v4"
+	"github.com/pion/logging"
 	"github.com/pion/transport/v5"
 	"github.com/pion/transport/v5/stdnet"
-	"github.com/pion/logging"
 	"github.com/pion/webrtc/v4"
 
 	"github.com/ZahakJ/ferry/internal/secure"
@@ -51,7 +51,7 @@ type Options struct {
 
 // Link is an open connection.
 type Link struct {
-	pcs   []*webrtc.PeerConnection
+	pcs []*webrtc.PeerConnection
 	// Ctl is an ordered, reliable message channel for control.
 	Ctl datachannel.ReadWriteCloser
 	// Lanes are reliable, unordered message channels for bulk data.

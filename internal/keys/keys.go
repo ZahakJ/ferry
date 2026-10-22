@@ -28,6 +28,8 @@ type Public struct {
 	Name string `json:"name"`
 	Sign []byte `json:"sign"` // Ed25519 public key
 	Box  []byte `json:"box"`  // X25519 public key
+	// Peer is the libp2p peer ID this identity answers on at the rendezvous.
+	Peer string `json:"peer,omitempty"`
 }
 
 // ID is a short, stable fingerprint of a public identity.
