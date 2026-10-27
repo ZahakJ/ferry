@@ -85,6 +85,46 @@ STUN (how each machine learns its public address) defaults to a public
 server. To use your own, set `FERRY_STUN=stun:stun.example.org:3478`, or
 `"stun": ["stun:…"]` in `config.json` in `ferry config`'s folder.
 
+## Your own devices as one
+
+Link your laptop, desktop and GPU box once, and they work like one machine:
+
+```sh
+ferry mine add                 # on one device: prints a code
+ferry mine join 12-oak-lamp-sky   # on another; both screens show two words, both say y
+ferry mine service             # on each: keep ferry up running (systemd / launchd)
+```
+
+Then, on any of them:
+
+```sh
+ls ~/m/desktop                 # the desktop's home, mounted while it is reachable
+on desktop make test           # runs there; stdin, output and exit code pass through
+on gpu python train.py         # on whichever reachable device has an NVIDIA GPU
+ferry mine                     # which are online, their CPU, RAM, GPU and load
+ferry mine res                 # all of them added up
+ferry mine fwd desktop 3000    # its port 3000 at http://localhost:3000 here
+claude --resume                # lists the Claude sessions of every device
+```
+
+`on` runs in the same folder when you are in your home (or in
+`~/m/<device>`), relative to the home: `/home/you/x` on Linux is
+`/Users/you/x` on a Mac. `ferry mine fallback on` makes a command that is
+missing here run on the first device that has it, with one dim line
+saying where. `ferry mine sync` pulls Claude sessions now (ferry up does
+it every minute); it only ever adds: a session that went on elsewhere
+gets the new lines, and one that went on on two devices at once is kept
+as both. Settings, credentials and memory stay on each device.
+
+Linking a third device to either of the first two links it with all of
+them. `ferry mine rm <device>` takes one out, on every device (those that
+are offline are told when they are next online).
+
+Your devices get full access to each other: each runs a private sshd on
+its own 127.0.0.1 that only their keys open, reached only through ferry.
+So one compromised device reaches all of them. A friend you `ferry pair`
+with never gets any of this. See SECURITY.md.
+
 ## Borrow a machine
 
 Someone lends you a box on their machine (`lend`). You get a code and run:

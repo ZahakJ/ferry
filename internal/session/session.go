@@ -77,11 +77,13 @@ type headerReply struct {
 const (
 	PurposeSend = "send"
 	PurposePair = "pair"
+	PurposeMine = "mine"
 )
 
 var purposeHint = map[string]string{
 	PurposeSend: "this code is for receiving a file: run `ferry get <code>`",
 	PurposePair: "this code is for pairing: run `ferry pair <code>`",
+	PurposeMine: "this code links your own devices: run `ferry mine join <code>`",
 }
 
 // ErrCodeUsed means a code attempt failed and the code is now spent.
@@ -362,8 +364,9 @@ func (e *Endpoint) Listen(ctx context.Context, known func() keys.Contacts, handl
 // that does not know one answers with OK false and a reason, so older and
 // newer versions fail politely rather than misunderstand each other.
 type Intent struct {
-	Want string `json:"want"`           // msg | files | pipe
-	Port int    `json:"port,omitempty"` // pipe: the port on the other side's localhost
+	Want string          `json:"want"`           // msg | files | pipe | mine-*
+	Port int             `json:"port,omitempty"` // pipe: the port on the other side's localhost
+	Data json.RawMessage `json:"data,omitempty"` // mine-*: what it carries
 }
 
 // IntentReply accepts or declines an Intent.

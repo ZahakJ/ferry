@@ -52,8 +52,9 @@ are online. They cannot make your machine run anything. The one exception
 you can opt into is `ferry pipe`: if you run `ferry up --allow-pipe 2222`,
 a paired contact can open a TCP connection to port 2222 on this machine's
 localhost (127.0.0.1), and to no other port or address. It is off by
-default, granted per port, never to anyone unpaired, and every pipe opened
-or refused is logged by `ferry up`. Whatever listens on an allowed port
+default, granted per port, never to anyone unpaired, never to the mesh
+sshd of `ferry mine` (that is for your own devices only), and every pipe
+opened or refused is logged by `ferry up`. Whatever listens on an allowed port
 (sshd, say) does its own authentication, and what a contact can do through
 it is what that service allows. ferry never
 executes received content; fetched files lose their execute bit and are
@@ -65,6 +66,51 @@ server tells the model that received text is untrusted and is not to be
 followed without the user's consent. A future job runner (running
 commands on request) will be off by default and need a per-contact
 allowlist you write yourself.
+
+**Your own devices** (`ferry mine`) get full access to each other, on
+purpose: each one can log in to every other as you, read and change your
+files there and run anything. So **one compromised device reaches all of
+them**; link only machines that are yours and that you would trust with
+each other's keys. How it is built:
+
+- Linking is pairing (CPace over a one-time code) plus a check both
+  people must answer: each screen shows two words, and both must say they
+  match before either side records anything. A no on either side links
+  nothing.
+- Each device runs a private sshd on 127.0.0.1 only, as you (no root),
+  that accepts only public keys, only the mesh keys of your devices
+  (no passwords, no agent or X11 forwarding, local port forwarding only),
+  and has its own host key, checked strictly from a known_hosts file in
+  ferry's folder. ferry's agent connects a pipe to it only for a contact
+  recorded as one of your devices; for anyone else (`mine-*` requests, or
+  `ferry pipe` to its port, even if `--allow-pipe` lists it) it refuses
+  and logs. A friend cannot become one of your devices except by you
+  running `ferry mine add`/`join` with them.
+- Outside ferry's folder it writes one marked block per device at the top
+  of `~/.ssh/config`, an `on` script in `~/.local/bin` (never over one it
+  did not make), mount points under `~/m`, and, only if you turn the
+  fallback on, one marked line in `~/.bashrc`/`~/.zshrc`. It does not
+  touch `~/.ssh/authorized_keys` unless you choose `--system-sshd`.
+- A device you link to one of yours is introduced to the others by it,
+  over their authenticated contact session. That adds nothing an attacker
+  holding one of your devices could not do anyway: it already has a shell
+  on the others.
+- `ferry mine rm <device>`, on any of your devices, removes it there and
+  tells the removed device to forget all of yours and every other device
+  to forget it. A device that is offline is told when both are next
+  online; until then it still trusts the removed one. A removed device
+  that ignores the message is still turned away by every device that got
+  it: it is no longer their contact, and its key is gone from their sshd.
+- Claude sessions are pulled from each device into the others: only
+  transcript files (`.jsonl`) and their side files under
+  `~/.claude/projects`, never `memory/`, settings, credentials or anything
+  else. Nothing is deleted or overwritten; a transcript only grows when
+  the copy here is exactly the start of the other.
+- What the rendezvous sees is what it sees for any contact: that your
+  devices are online and when they connect to each other. ferry up checks
+  your devices every 15 s over one long-lived ssh connection each, so it
+  goes back to the rendezvous only to reconnect (once a minute for a
+  device that stays offline).
 
 **A box you joined** (`ferry join`) has no way into your machine. Your
 machine reaches into the box (ssh, the box's files mounted at `~/<box>`,

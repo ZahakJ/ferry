@@ -11,6 +11,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ZahakJ/ferry/internal/agent"
 	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/pair"
 	"github.com/ZahakJ/ferry/internal/secure"
@@ -45,6 +46,8 @@ func init() {
 		{"ports", "<box>", "list the box's ports ferry shell is sharing to localhost here", cmdPorts},
 		{"leave", "<box>", "undo ferry join: unmount, close sessions, remove the ssh config, forget the box", cmdLeave},
 		{"pipe", "<contact> [port]", "connect stdin/stdout to a port on a contact's localhost (ssh ProxyCommand)", cmdPipe},
+		{"mine", "[add|join|rm|res|sync|ports|fwd|fallback|service]", "make all your own devices one machine (ferry help mine)", cmdMine},
+		{"on", "<device|gpu> [command…]", "run a command on one of your own devices, in the same folder", cmdOn},
 		{"up", "[--unit] [--allow-pipe ports]", "stay online in the background so contacts can reach you", cmdUp},
 		{"check", "", "test the connection to the rendezvous and STUN, and explain the results", cmdCheck},
 		{"mcp", "", "serve ferry as MCP tools on stdio (for Claude Code and other agents)", cmdMCP},
@@ -63,7 +66,11 @@ func main() {
 func run(argv []string) int {
 	jsonMode := false
 	var args []string
-	for _, a := range argv {
+	for i, a := range argv {
+		if len(args) == 1 && args[0] == "on" {
+			args = append(args, argv[i:]...) // the rest is a command for the other device, flags and all
+			break
+		}
 		if a == "--json" || a == "-json" {
 			jsonMode = true
 			continue
@@ -126,7 +133,7 @@ func exitCode(ctx context.Context, err error) int {
 		return exitInterrupt
 	case errors.As(err, &ue), errors.Is(err, flag.ErrHelp):
 		return exitUsage
-	case errors.Is(err, pair.ErrWrongCode), errors.Is(err, session.ErrCodeUsed), errors.Is(err, secure.ErrBadFrame), errors.Is(err, errAuth), errors.Is(err, session.ErrKeyChanged):
+	case errors.Is(err, pair.ErrWrongCode), errors.Is(err, session.ErrCodeUsed), errors.Is(err, secure.ErrBadFrame), errors.Is(err, errAuth), errors.Is(err, session.ErrKeyChanged), errors.Is(err, agent.ErrTurnedAway):
 		return exitAuth
 	case errors.Is(err, session.ErrOffline), errors.Is(err, session.ErrNobodyThere), errors.Is(err, errUnreachable), errors.Is(err, link.ErrNoPath):
 		return exitOffline

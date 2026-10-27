@@ -116,6 +116,32 @@ Connects stdin and stdout to a port on a paired contact's localhost, over
 the direct link (never a relay). The other side must run
 ferry up --allow-pipe 2222; every other port, and anyone not paired, is
 refused and logged there.`,
+	"mine": `
+  ferry mine add                  on one device: prints a code
+  ferry mine join <code>          on the other; both confirm the two check words
+  ferry mine                      your devices: online, path, CPU/RAM/GPU, mounts
+  ferry mine res                  all of them added up
+  ferry mine rm <device>          take a device out (both ways, all devices)
+  ferry mine sync [device]        pull Claude sessions now (ferry up does it every minute)
+  ferry mine ports <device>       what listens there
+  ferry mine fwd <device> <port>  put it on 127.0.0.1 here (--stop ends it)
+  ferry mine fallback on|off      a command missing here runs where it exists
+  ferry mine service              start ferry up at login (systemd / launchd)
+Your own devices, linked, are one machine: each device's home is at
+~/m/<device> while it is reachable, on <device> <cmd> runs there, and
+claude --resume lists the sessions of all of them. They get FULL access to
+each other (ssh as you), so one compromised device reaches all. A plain
+contact (ferry pair) never gets any of it. Joining a third device from
+either one links it with all. Each device needs ferry up running
+(ferry mine service). --system-sshd uses the system sshd instead of
+ferry's private one on 127.0.0.1.`,
+	"on": `
+  on laptop make test             run there; stdin/stdout/exit code pass through
+  on gpu python train.py          on a reachable device with an NVIDIA GPU
+  on laptop                       a login shell there
+In your home (or in ~/m/<device>), the command runs in the same folder
+there, relative to the home: /home/you/x here is /Users/you/x on a Mac.
+ferry mine add/join installs on as ~/.local/bin/on; ferry on is the same.`,
 	"up": `
 Stays online so contacts can reach this machine: messages are kept for
 ferry inbox, files land in the files folder (ferry files). ferry up --unit
@@ -187,6 +213,7 @@ OTHER
   ferry contacts --json          {"event":"contacts","contacts":[{"name":...}]}
   ferry check                    is the rendezvous reachable? STUN? the port?
   ferry up                       stay online so contacts can reach you
+  ferry mine / on <dev> <cmd>    your own devices as one machine (ferry help mine)
   ferry mcp                      the same as MCP tools over stdio
   ferry config [key value]       name, rendezvous, lanes, port, box-ports, box-internet
 `

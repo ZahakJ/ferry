@@ -173,6 +173,29 @@ type Contact struct {
 	Name   string    `json:"name"` // our local name for them
 	Key    Public    `json:"key"`
 	Paired time.Time `json:"paired"`
+	// Kind is "" for someone else's machine (a friend), or KindMine for
+	// another device of this machine's owner (ferry mine), which gets full
+	// access to this machine. Only ferry mine add/join set it.
+	Kind string `json:"kind,omitempty"`
+	// Device describes a KindMine contact: how to reach its mesh sshd.
+	Device *Device `json:"device,omitempty"`
+}
+
+// KindMine marks a contact as one of this owner's own devices.
+const KindMine = "mine"
+
+// Mine reports whether c is one of this owner's own devices.
+func (c Contact) Mine() bool { return c.Kind == KindMine && c.Device != nil }
+
+// Device is what one of your own devices tells the others about itself
+// when they link (ferry mine): enough for ssh to reach it and for paths to
+// map between homes.
+type Device struct {
+	User    string `json:"user"`     // its account
+	Home    string `json:"home"`     // its home directory
+	OS      string `json:"os"`       // linux | darwin
+	SSHKey  string `json:"ssh_key"`  // its mesh client key (authorized_keys line, no options)
+	HostKey string `json:"host_key"` // its mesh sshd's host key
 }
 
 // Contacts is the address book, keyed by local name.

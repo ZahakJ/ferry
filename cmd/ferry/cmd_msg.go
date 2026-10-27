@@ -237,6 +237,8 @@ func cmdUp(ctx context.Context, o *out, args []string) error {
 	a.AllowPipes(ports, func(format string, args ...any) {
 		o.say("%s %s", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
 	})
+	mf := startMine(ctx, a) // your own devices (ferry mine); idle when none are linked
+	defer mf.stopSSHD()     // before this process exits, not after
 	if err := a.Listen(ctx, true); err != nil {
 		return fmt.Errorf("%w: %v", errUnreachable, err)
 	}
@@ -247,6 +249,9 @@ func cmdUp(ctx context.Context, o *out, args []string) error {
 	o.say(o.dim("Messages are kept for `ferry inbox`; files land in " + agent.FilesDir() + ". Ctrl-C to stop."))
 	if len(ports) > 0 {
 		o.say("Contacts may pipe to localhost port(s) %s; nothing else.", *allow)
+	}
+	if ds, _ := mineDevices(); len(ds) > 0 {
+		o.say("Your own devices (ferry mine) reach this one's mesh sshd; plain contacts never do: %s.", strings.Join(allMineNames(), ", "))
 	}
 	o.event("up", map[string]any{"name": id.Name, "id": st.ID, "socket": agent.SocketPath()})
 	err = agent.Serve(ctx, a)

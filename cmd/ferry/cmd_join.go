@@ -604,7 +604,7 @@ func mounted(dir string) bool {
 }
 
 func unmount(dir string) {
-	for _, c := range [][]string{{"fusermount3", "-u", "-z", dir}, {"fusermount", "-u", "-z", dir}, {"umount", dir}} {
+	for _, c := range [][]string{{"fusermount3", "-u", "-z", dir}, {"fusermount", "-u", "-z", dir}, {"umount", dir}, {"diskutil", "unmount", "force", dir}} {
 		if exec.Command(c[0], c[1:]...).Run() == nil {
 			return
 		}

@@ -9,6 +9,26 @@ exit codes are part of the public interface.
 
 ### Added
 
+- `ferry mine`: your own devices as one machine. `ferry mine add` on one
+  device and `ferry mine join <code>` on another link them (both screens
+  show two words, both must confirm); a third linked to either is
+  introduced to all. Each device's home is mounted at `~/m/<device>` while
+  it is reachable (and remounted after a drop), `on <device> <cmd>` runs a
+  command there in the same folder (home-relative, so `/home/you/x` is
+  `/Users/you/x` on a Mac) with stdin, output and exit code passed
+  through, `on gpu <cmd>` picks a device with an NVIDIA GPU, and
+  `claude --resume` lists the Claude sessions of all of them (pulled every
+  minute, append-only, never deleting; diverged sessions kept as
+  `<id>.ferry-<device>.jsonl`). `ferry mine` and `ferry mine res` show the
+  devices and their resources (`--json`); `ferry mine ports`/`fwd` list
+  and forward their ports; `ferry mine fallback on` runs a missing command
+  where it exists; `ferry mine service` installs a systemd user unit or a
+  launchd agent; `ferry mine rm` removes a device everywhere. Your devices
+  get full mutual access through a private, key-only sshd on each one's
+  127.0.0.1; plain contacts never do.
+- `ferry on`, also installed as `~/.local/bin/on`.
+- `ferry contacts` shows which contacts are your own devices.
+
 - `ferry join <code>` uses a machine someone lends you (a "box"): it pairs
   and adds `Host <box>` to `~/.ssh/config`. It is a one-way mirror: your
   machine reaches into the box and the box has no way back into yours.
@@ -48,6 +68,9 @@ exit codes are part of the public interface.
 
 ### Fixed
 
+- With `ferry up` running, `ferry pipe` (and so ssh through it) goes through
+  it instead of joining the rendezvous a second time under the same
+  identity, where incoming sessions could reach the wrong process.
 - A running `ferry up` that lost the rendezvous (an outage or a restart)
   stayed unreachable until restarted. It now reconnects within 15 s; the
   harness restarts the rendezvous to check.

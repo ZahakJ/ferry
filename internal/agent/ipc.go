@@ -7,9 +7,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"syscall"
@@ -19,6 +21,7 @@ import (
 	"github.com/ZahakJ/ferry/internal/keys"
 	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/msg"
+	"github.com/ZahakJ/ferry/internal/pipe"
 	"github.com/ZahakJ/ferry/internal/session"
 	"github.com/ZahakJ/ferry/internal/xfer"
 )
@@ -60,6 +63,8 @@ type request struct {
 	Path    string          `json:"path,omitempty"`
 	Timeout time.Duration   `json:"timeout,omitempty"`
 	Extra   json.RawMessage `json:"extra,omitempty"`
+	Want    string          `json:"want,omitempty"` // pipe: pipe | mine-ssh
+	Port    int             `json:"port,omitempty"` // pipe: the port there
 }
 
 type response struct {
@@ -82,7 +87,11 @@ var kinds = map[string]error{
 	"auth":            session.ErrKeyChanged,
 	"no_room":         xfer.ErrNoRoom,
 	"no_path":         link.ErrNoPath,
+	"turned_away":     ErrTurnedAway,
 }
+
+// ErrTurnedAway means a contact refused this machine at the handshake.
+var ErrTurnedAway = errors.New("turned away")
 
 func kindOf(err error) string {
 	for k, e := range kinds {
@@ -151,6 +160,12 @@ func handle(ctx context.Context, a API, c *net.UnixConn) {
 		return
 	}
 	enc := json.NewEncoder(c)
+	if req.Op == "pipe" { // the socket becomes the stream; nothing else may read it
+		if l, ok := a.(*Local); ok {
+			l.ipcPipe(ctx, c, enc, req)
+		}
+		return
+	}
 	// A request ends when the client hangs up, so a cancelled `ferry wait`
 	// does not leave work running here.
 	rctx, cancel := context.WithCancel(ctx)
@@ -185,13 +200,141 @@ func handle(ctx context.Context, a API, c *net.UnixConn) {
 	case "files":
 		res, err = a.Files(rctx, req.Since)
 	default:
-		err = fmt.Errorf("unknown request %q", req.Op)
+		var fn func(context.Context, json.RawMessage) (any, error)
+		if l, ok := a.(*Local); ok {
+			l.mu.Lock()
+			fn = l.ipc[req.Op]
+			l.mu.Unlock()
+		}
+		if fn == nil {
+			err = fmt.Errorf("unknown request %q", req.Op)
+			break
+		}
+		res, err = fn(rctx, req.Extra)
 	}
 	if err != nil {
 		enc.Encode(response{Error: err.Error(), Kind: kindOf(err)})
 		return
 	}
 	enc.Encode(response{OK: true, Result: res})
+}
+
+// ipcPipe opens a pipe to a contact for a local process (ferry pipe, as
+// ssh's ProxyCommand) through this agent's own connection to the
+// rendezvous, so one machine is one peer there however many pipes it has
+// open. After the first reply line the socket carries the stream.
+func (a *Local) ipcPipe(ctx context.Context, c *net.UnixConn, enc *json.Encoder, req request) {
+	fail := func(err error) { enc.Encode(response{Error: err.Error(), Kind: kindOf(err)}) }
+	ct, err := contact(req.To)
+	if err != nil {
+		fail(err)
+		return
+	}
+	want := req.Want
+	if want != "mine-ssh" {
+		want = "pipe"
+	}
+	ep, err := a.online(ctx)
+	if err != nil {
+		fail(err)
+		return
+	}
+	dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+	s, err := ep.Dial(dctx, ct)
+	cancel()
+	if err != nil {
+		if strings.Contains(err.Error(), "stream reset") {
+			err = fmt.Errorf("%w: %s does not know this machine as a contact (pair again)", ErrTurnedAway, ct.Name)
+		}
+		fail(err)
+		return
+	}
+	defer s.Close()
+	if err := s.Conn.SendJSON(session.Intent{Want: want, Port: req.Port}); err != nil {
+		fail(err)
+		return
+	}
+	var r session.IntentReply
+	if err := s.Conn.RecvJSON(&r); err != nil {
+		fail(err)
+		return
+	}
+	if !r.OK {
+		fail(fmt.Errorf("%w: %s", session.ErrDeclined, r.Why))
+		return
+	}
+	pctx, pcancel := context.WithCancel(ctx)
+	defer pcancel()
+	l, err := s.Link(pctx, 1)
+	if err != nil {
+		fail(err)
+		return
+	}
+	defer l.Close()
+	if enc.Encode(response{OK: true, Result: map[string]string{"path": l.Path}}) != nil {
+		return
+	}
+	pipe.Pump(pctx, l, c, c, func() { c.CloseWrite() })
+}
+
+// ErrNoAgentPipe means the running agent is too old to carry pipes.
+var ErrNoAgentPipe = errors.New("the running ferry up does not carry pipes")
+
+// Pipe connects in and out to a port on a contact's localhost (want
+// "pipe") or to its mesh sshd (want "mine-ssh") through the background
+// agent. It returns once both directions are done.
+func Pipe(ctx context.Context, to, want string, port int, in io.Reader, out io.Writer, closeOut func()) error {
+	c, err := dialAgent(ctx)
+	if err != nil {
+		return fmt.Errorf("background agent: %w", err)
+	}
+	uc := c.(*net.UnixConn)
+	defer uc.Close()
+	if err := json.NewEncoder(uc).Encode(request{Op: "pipe", To: to, Want: want, Port: port}); err != nil {
+		return err
+	}
+	br := bufio.NewReader(uc)
+	line, err := br.ReadBytes('\n')
+	if err != nil {
+		return errors.New("background agent hung up")
+	}
+	var resp response
+	if err := json.Unmarshal(line, &resp); err != nil {
+		return err
+	}
+	if !resp.OK {
+		if strings.Contains(resp.Error, `unknown request "pipe"`) {
+			return ErrNoAgentPipe
+		}
+		return &remoteError{msg: resp.Error, kind: kinds[resp.Kind]}
+	}
+	down := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(out, br)
+		if closeOut != nil {
+			closeOut()
+		}
+		down <- err
+	}()
+	go func() {
+		io.Copy(uc, in)
+		uc.CloseWrite()
+	}()
+	select {
+	case err := <-down:
+		return err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// Call makes an extra request (see HandleIPC) of the background agent.
+func Call(ctx context.Context, op string, extra any, out any) error {
+	b, err := json.Marshal(extra)
+	if err != nil {
+		return err
+	}
+	return (&Remote{}).call(ctx, request{Op: op, Extra: b}, out, nil)
 }
 
 // Remote is a client for a background agent.

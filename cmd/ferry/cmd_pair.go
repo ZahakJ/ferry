@@ -93,7 +93,11 @@ func cmdContacts(ctx context.Context, o *out, args []string) error {
 	var list []map[string]any
 	for _, n := range cs.Names() {
 		c := cs[n]
-		list = append(list, map[string]any{"name": n, "id": c.Key.ID(), "paired": c.Paired})
+		kind := "friend"
+		if c.Mine() {
+			kind = "mine"
+		}
+		list = append(list, map[string]any{"name": n, "id": c.Key.ID(), "paired": c.Paired, "kind": kind})
 	}
 	if o.json {
 		o.event("contacts", map[string]any{"contacts": list})
@@ -105,7 +109,11 @@ func cmdContacts(ctx context.Context, o *out, args []string) error {
 	}
 	for _, n := range cs.Names() {
 		c := cs[n]
-		o.result("%-16s %s  paired %s", n, o.dim(c.Key.ID()), c.Paired.Local().Format("2006-01-02"))
+		kind := ""
+		if c.Mine() {
+			kind = "  your own device (ferry mine)"
+		}
+		o.result("%-16s %s  paired %s%s", n, o.dim(c.Key.ID()), c.Paired.Local().Format("2006-01-02"), kind)
 	}
 	return nil
 }
@@ -125,6 +133,9 @@ func cmdForget(ctx context.Context, o *out, args []string) error {
 	if _, ok := cs[args[0]]; !ok {
 		_, err := findContact(args[0])
 		return err
+	}
+	if cs[args[0]].Mine() {
+		return usagef("%s is one of your own devices; ferry mine rm %s removes it everywhere and cleans up", args[0], args[0])
 	}
 	delete(cs, args[0])
 	if err := cs.Save(); err != nil {

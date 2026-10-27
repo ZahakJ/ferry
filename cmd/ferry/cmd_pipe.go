@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ZahakJ/ferry/internal/agent"
 	"github.com/ZahakJ/ferry/internal/keys"
 	"github.com/ZahakJ/ferry/internal/pipe"
 	"github.com/ZahakJ/ferry/internal/session"
@@ -52,6 +53,25 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 	if !ok {
 		return fmt.Errorf("%w: %q is not a contact (ferry contacts)", errUnreachable, pos[0])
 	}
+	// One of your own devices, no port named: its mesh sshd (ferry mine).
+	want := "pipe"
+	if port == 0 && c.Mine() {
+		want = "mine-ssh"
+	}
+	// With ferry up running, the pipe goes through it, so this machine is
+	// one peer at the rendezvous however many pipes it has open.
+	if agent.Running() {
+		err := agent.Pipe(ctx, c.Name, want, port, os.Stdin, os.Stdout, func() { os.Stdout.Close() })
+		if !errors.Is(err, agent.ErrNoAgentPipe) {
+			if errors.Is(err, context.Canceled) {
+				return nil
+			}
+			if err != nil && strings.Contains(err.Error(), "declined: ") {
+				return fmt.Errorf("%w: %s", errDeclined, strings.SplitN(err.Error(), "declined: ", 2)[1])
+			}
+			return err
+		}
+	}
 	ep, err := session.Online(ctx, cfg, id)
 	if err != nil {
 		return err
@@ -67,7 +87,7 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 		return err
 	}
 	defer s.Close()
-	if err := s.Conn.SendJSON(session.Intent{Want: "pipe", Port: port}); err != nil {
+	if err := s.Conn.SendJSON(session.Intent{Want: want, Port: port}); err != nil {
 		return err
 	}
 	var r session.IntentReply
