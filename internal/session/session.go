@@ -251,6 +251,8 @@ type Endpoint struct {
 	ID   *keys.Identity
 	Node *rv.Node
 	cfg  *Config
+	// OnReject, if set, hears about every peer turned away at the handshake.
+	OnReject func(peer string, why error)
 }
 
 // Online connects to the rendezvous as id.
@@ -344,6 +346,9 @@ func (e *Endpoint) Listen(ctx context.Context, known func() keys.Contacts, handl
 		})
 		if err != nil {
 			st.Reset()
+			if e.OnReject != nil {
+				e.OnReject(st.Conn().RemotePeer().String(), err)
+			}
 			return
 		}
 		st.SetDeadline(time.Time{})
@@ -357,7 +362,8 @@ func (e *Endpoint) Listen(ctx context.Context, known func() keys.Contacts, handl
 // that does not know one answers with OK false and a reason, so older and
 // newer versions fail politely rather than misunderstand each other.
 type Intent struct {
-	Want string `json:"want"` // msg | files
+	Want string `json:"want"`           // msg | files | pipe
+	Port int    `json:"port,omitempty"` // pipe: the port on the other side's localhost
 }
 
 // IntentReply accepts or declines an Intent.

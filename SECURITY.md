@@ -48,7 +48,14 @@ sides abandon the code. With 31 bits of secret words, one guess succeeds
 about once in two billion tries.
 
 **A paired contact** can send you messages and files, and can see that you
-are online. They cannot make your machine run anything. ferry never
+are online. They cannot make your machine run anything. The one exception
+you can opt into is `ferry pipe`: if you run `ferry up --allow-pipe 2222`,
+a paired contact can open a TCP connection to port 2222 on this machine's
+localhost (127.0.0.1), and to no other port or address. It is off by
+default, granted per port, never to anyone unpaired, and every pipe opened
+or refused is logged by `ferry up`. Whatever listens on an allowed port
+(sshd, say) does its own authentication, and what a contact can do through
+it is what that service allows. ferry never
 executes received content; fetched files lose their execute bit and are
 named `ferry-<n>-<name>`, and a received folder named like `.git` or
 `.envrc` is saved as `dot-git`, so nothing lands where a tool would act on

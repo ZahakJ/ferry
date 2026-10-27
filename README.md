@@ -81,6 +81,29 @@ ferry check
 `ferry check` says what works and what does not: the rendezvous, your
 public address, the port.
 
+STUN (how each machine learns its public address) defaults to a public
+server. To use your own, set `FERRY_STUN=stun:stun.example.org:3478`, or
+`"stun": ["stun:…"]` in `config.json` in `ferry config`'s folder.
+
+## SSH to a paired machine
+
+`ferry pipe` connects stdin/stdout to a TCP port on a contact's localhost,
+over the same direct, end-to-end encrypted link, with no open ports on
+either side. On the machine to reach, allow exactly the ports you mean
+(nothing is allowed by default; every pipe is logged):
+
+```sh
+ferry up --allow-pipe 22
+```
+
+On the other, after pairing:
+
+```sh
+ssh -o ProxyCommand='ferry pipe box 22' me@box
+# or in ~/.ssh/config:  Host box
+#                         ProxyCommand ferry pipe box 22
+```
+
 ## How it works
 
 1. **Meeting.** Both sides connect out to the rendezvous. The code's

@@ -55,7 +55,8 @@ type Options struct {
 type Link struct {
 	pcs []*webrtc.PeerConnection
 	// Ctl is an ordered, reliable message channel for control.
-	Ctl datachannel.ReadWriteCloser
+	Ctl   datachannel.ReadWriteCloser
+	ctlDC *webrtc.DataChannel
 	// Lanes are reliable, unordered message channels for bulk data.
 	Lanes []*Lane
 	// Path describes how traffic flows: always "direct", as ferry never relays.
@@ -203,6 +204,7 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 		}
 	}
 	var ctl datachannel.ReadWriteCloser
+	var ctlDC *webrtc.DataChannel
 	lanes := make([]*Lane, o.Lanes)
 
 	for i := 0; i < o.Lanes; i++ {
@@ -245,7 +247,7 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 					report(ready{lane: i, err: err})
 					return
 				}
-				ctl = rw
+				ctl, ctlDC = rw, dc
 				done()
 			})
 		}
@@ -307,7 +309,7 @@ func Open(ctx context.Context, sig *secure.Conn, initiator bool, o Options) (*Li
 		l.Close()
 		return nil, fmt.Errorf("%w (%s)", ErrNoPath, strings.Join(errs, "; "))
 	}
-	l.Ctl = ctl
+	l.Ctl, l.ctlDC = ctl, ctlDC
 	for _, ln := range lanes {
 		if ln != nil {
 			l.Lanes = append(l.Lanes, ln)
@@ -433,6 +435,43 @@ func (l *Link) close() {
 	for _, pc := range l.pcs {
 		pc.Close()
 	}
+}
+
+// ctlHigh is how much the control channel may have queued before
+// WriteCtl waits: enough for a stream, small enough to bound memory.
+const ctlHigh = 4 << 20
+
+// WriteCtl sends one raw message on the control channel, waiting while
+// too much is already queued, so a fast writer cannot grow memory without
+// bound. It is for byte streams that need ordering (see package pipe).
+func (l *Link) WriteCtl(ctx context.Context, b []byte) error {
+	for l.ctlDC != nil && l.ctlDC.BufferedAmount() > ctlHigh {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-l.done:
+			return ErrClosed
+		case <-time.After(2 * time.Millisecond):
+		}
+	}
+	_, err := l.Ctl.Write(b)
+	return err
+}
+
+// FlushCtl waits until everything written on the control channel has been
+// acknowledged by the peer, so closing the link right after does not
+// throw away the end of a stream.
+func (l *Link) FlushCtl(ctx context.Context) error {
+	for l.ctlDC != nil && l.ctlDC.BufferedAmount() > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-l.done:
+			return ErrClosed
+		case <-time.After(5 * time.Millisecond):
+		}
+	}
+	return nil
 }
 
 // SendCtl sends one JSON control message.

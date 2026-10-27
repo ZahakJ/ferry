@@ -398,6 +398,46 @@ if ns hostA "$BIN/mcpdrive" \
 else bad "MCP: $(grep FAIL "$LOG/mcp.err" | head -1)"; fi
 fi
 
+if want pipe; then
+step "pipe: a TCP port through the direct link (what ssh's ProxyCommand uses)"
+# sam serves a port that answers with the sha256 of everything it read: this
+# checks every byte and the half-close (the answer only comes after EOF).
+cat > "$WORK/shaecho.py" <<'PY'
+import hashlib, socket, sys
+s = socket.socket(); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(("127.0.0.1", int(sys.argv[1]))); s.listen(4)
+while True:
+    c, _ = s.accept(); h = hashlib.sha256()
+    while (b := c.recv(1 << 16)): h.update(b)
+    c.sendall(h.hexdigest().encode() + b"\n"); c.close()
+PY
+ns hostB python3 "$WORK/shaecho.py" 7000 & PIDS="$PIDS $!"
+$FB up --allow-pipe 7000 > "$LOG/pipe-up.out" 2> "$LOG/pipe-up.err" & PIDS="$PIDS $!"
+for i in $(seq 100); do grep -q "ferry is up" "$LOG/pipe-up.err" 2>/dev/null && break; sleep 0.1; done
+mkfile "$WORK/p.bin" 100
+want_sum=$(sha256sum < "$WORK/p.bin" | cut -d' ' -f1)
+t0=$(date +%s.%N)
+got_sum=$(timeout 120 $FA pipe sam 7000 < "$WORK/p.bin" 2> "$LOG/pipe-a.err")
+t1=$(date +%s.%N)
+if [ "$got_sum" = "$want_sum" ]; then
+	mbs=$(echo "100 / ($t1 - $t0)" | bc -l | cut -c1-5)
+	ok "100 MB through ferry pipe, sha256 matches, ${mbs} MB/s (setup included)"
+	echo "pipe 100MB ${mbs} MB/s" >> "$LOG/speeds"
+else bad "pipe: sha mismatch or failure: '$got_sum' $(tail -1 "$LOG/pipe-a.err")"; fi
+if echo hi | timeout 60 $FA pipe sam 7001 > /dev/null 2> "$LOG/pipe-deny.err"; then bad "a port not in --allow-pipe was served"
+else
+	grep -q "not open for pipes" "$LOG/pipe-deny.err" && ok "a port not in --allow-pipe is refused: $(tail -1 "$LOG/pipe-deny.err" | sed 's/.*ferry: //')" || bad "refused, but unclearly: $(tail -1 "$LOG/pipe-deny.err")"
+fi
+grep -q "refused pipe from ana to port 7001" "$LOG/pipe-up.err" && ok "the refusal is logged on sam's side" || bad "no refusal in sam's log"
+# A stranger who knows sam's key (a copied address book) but never paired.
+HC=$WORK/home-c; rm -rf "$HC"; mkdir -p "$HC"
+FC="ip netns exec hostA env FERRY_HOME=$HC $BIN/ferry"
+$FC config name eve >/dev/null 2>&1; cp "$HA/contacts.json" "$HC/contacts.json"
+if echo hi | timeout 60 $FC pipe sam 7000 > "$LOG/pipe-eve.out" 2> "$LOG/pipe-eve.err"; then bad "an unpaired peer got a pipe: $(cat "$LOG/pipe-eve.out")"
+else ok "an unpaired peer is refused: $(tail -1 "$LOG/pipe-eve.err" | sed 's/.*ferry: //' | cut -c1-80)"; fi
+sleep 1; grep -q "refused .*not a contact" "$LOG/pipe-up.err" && ok "the stranger is logged on sam's side" || bad "stranger not logged"
+fi
+
 step "result"
 [ -f "$LOG/speeds" ] && cp "$LOG/speeds" "$WORK/speeds.txt"
 echo "  $pass passed, $failed failed. Logs: $LOG"

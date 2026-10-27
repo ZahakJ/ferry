@@ -7,6 +7,20 @@ exit codes are part of the public interface.
 
 ## [Unreleased]
 
+### Added
+
+- `ferry pipe <contact> <port>` connects stdin/stdout to a TCP port on a
+  paired contact's localhost over the direct link, so ssh works with no
+  open ports: `ssh -o ProxyCommand='ferry pipe box 22' me@box`.
+- `ferry up --allow-pipe <port>[,<port>]` serves pipes only to the listed
+  localhost ports and only to paired contacts (none by default); every
+  pipe opened or refused, and every stranger turned away, is logged.
+
+### Changed
+
+- The rendezvous in `deploy/fly` caps every relayed circuit at 1 MiB and
+  2 minutes (Concord v0.59.1): it carries signaling only, never data.
+
 ## [0.1.0] - 2026-10-22
 
 First release. Static binaries for Linux and macOS, amd64 and arm64.

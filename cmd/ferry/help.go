@@ -67,6 +67,12 @@ Delivered live if they are online, otherwise left in their mailbox.`,
   ferry wait --from sam --timeout 10m
 Exits 0 with the message, or 5 on timeout. --since <n> also returns a
 message that arrived after cursor n but before you started waiting.`,
+	"pipe": `
+  ssh -o ProxyCommand='ferry pipe box 2222' friend@box
+Connects stdin and stdout to a port on a paired contact's localhost, over
+the direct link (never a relay). The other side must run
+ferry up --allow-pipe 2222; every other port, and anyone not paired, is
+refused and logged there.`,
 	"up": `
 Stays online so contacts can reach this machine: messages are kept for
 ferry inbox, files land in the files folder (ferry files). ferry up --unit

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -197,6 +198,7 @@ func cmdFiles(ctx context.Context, o *out, args []string) error {
 func cmdUp(ctx context.Context, o *out, args []string) error {
 	fs := flag.NewFlagSet("up", flag.ContinueOnError)
 	unit := fs.Bool("unit", false, "print a systemd user unit for running ferry in the background, and how to install it")
+	allow := fs.String("allow-pipe", "", "comma-separated localhost ports contacts may reach with ferry pipe (default: none)")
 	if _, err := parse(fs, args); err != nil {
 		return err
 	}
@@ -222,6 +224,19 @@ func cmdUp(ctx context.Context, o *out, args []string) error {
 		return err
 	}
 	defer a.Close()
+	var ports []int
+	if *allow != "" {
+		for _, f := range strings.Split(*allow, ",") {
+			p, err := strconv.Atoi(strings.TrimSpace(f))
+			if err != nil || p < 1 || p > 65535 {
+				return usagef("--allow-pipe: %q is not a port", f)
+			}
+			ports = append(ports, p)
+		}
+	}
+	a.AllowPipes(ports, func(format string, args ...any) {
+		o.say("%s %s", time.Now().Format("2006-01-02 15:04:05"), fmt.Sprintf(format, args...))
+	})
 	if err := a.Listen(ctx, true); err != nil {
 		return fmt.Errorf("%w: %v", errUnreachable, err)
 	}
@@ -230,6 +245,9 @@ func cmdUp(ctx context.Context, o *out, args []string) error {
 	cs, _ := keys.LoadContacts()
 	o.say("%s ferry is up as %s %s. %d contact(s) can reach this machine.", o.green("●"), o.bold(id.Name), o.dim(st.ID), len(cs))
 	o.say(o.dim("Messages are kept for `ferry inbox`; files land in " + agent.FilesDir() + ". Ctrl-C to stop."))
+	if len(ports) > 0 {
+		o.say("Contacts may pipe to localhost port(s) %s; nothing else.", *allow)
+	}
 	o.event("up", map[string]any{"name": id.Name, "id": st.ID, "socket": agent.SocketPath()})
 	err = agent.Serve(ctx, a)
 	if ctx.Err() != nil {

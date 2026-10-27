@@ -12,14 +12,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/ZahakJ/ferry/internal/keys"
 	"github.com/ZahakJ/ferry/internal/msg"
+	"github.com/ZahakJ/ferry/internal/pipe"
 	"github.com/ZahakJ/ferry/internal/session"
 	"github.com/ZahakJ/ferry/internal/xfer"
 )
@@ -114,6 +117,30 @@ type Local struct {
 	news       chan struct{}   // closed and replaced when a message lands
 	busy       map[string]bool // contacts with a transfer in progress
 	stop       context.CancelFunc
+	pipes      map[int]bool // local ports contacts may pipe to; none by default
+	logf       func(format string, a ...any)
+}
+
+// AllowPipes lets contacts open pipes to these ports on this machine's
+// localhost, and nothing else. Every pipe accepted or refused, and every
+// stranger turned away, is reported through logf.
+func (a *Local) AllowPipes(ports []int, logf func(format string, a ...any)) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.pipes = map[int]bool{}
+	for _, p := range ports {
+		a.pipes[p] = true
+	}
+	a.logf = logf
+}
+
+func (a *Local) log(format string, args ...any) {
+	a.mu.Lock()
+	f := a.logf
+	a.mu.Unlock()
+	if f != nil {
+		f(format, args...)
+	}
 }
 
 // NewLocal makes an agent for this machine. It goes online lazily.
@@ -153,6 +180,7 @@ func (a *Local) Listen(ctx context.Context, background bool) error {
 	if err != nil {
 		return err
 	}
+	ep.OnReject = func(peer string, why error) { a.log("refused %s: %v", peer, why) }
 	if err := ep.Listen(ctx, contactsNow, a.serve); err != nil {
 		return err
 	}
@@ -255,9 +283,49 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 		defer a.releaseTransfer(c.Name)
 		s.Conn.SendJSON(session.IntentReply{OK: true})
 		a.receiveFile(s, c)
+	case "pipe":
+		a.servePipe(s, c, in.Port)
 	default:
 		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("this machine does not accept %q", in.Want)})
 	}
+}
+
+// servePipe connects a contact to one allowed port on localhost.
+func (a *Local) servePipe(s *session.Session, c keys.Contact, port int) {
+	a.mu.Lock()
+	allowed := a.pipes[port]
+	a.mu.Unlock()
+	if !allowed {
+		a.log("refused pipe from %s to port %d: not allowed (ferry up --allow-pipe)", c.Name, port)
+		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("port %d is not open for pipes on this machine", port)})
+		return
+	}
+	tcp, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 5*time.Second)
+	if err != nil {
+		a.log("pipe from %s to port %d failed: %v", c.Name, port, err)
+		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("nothing is listening on port %d", port)})
+		return
+	}
+	defer tcp.Close()
+	if s.Conn.SendJSON(session.IntentReply{OK: true}) != nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	l, err := s.Link(ctx, 1)
+	if err != nil {
+		a.log("pipe from %s to port %d: no direct path: %v", c.Name, port, err)
+		return
+	}
+	defer l.Close()
+	a.log("pipe open: %s -> port %d (%s)", c.Name, port, l.Path)
+	start := time.Now()
+	sent, got, err := pipe.Pump(ctx, l, tcp, tcp, func() { tcp.(*net.TCPConn).CloseWrite() })
+	why := "closed"
+	if err != nil {
+		why = err.Error()
+	}
+	a.log("pipe closed: %s -> port %d after %s, %d bytes in, %d out (%s)", c.Name, port, time.Since(start).Round(time.Second), got, sent, why)
 }
 
 func (a *Local) receiveFile(s *session.Session, c keys.Contact) {
