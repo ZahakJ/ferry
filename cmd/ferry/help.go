@@ -69,28 +69,47 @@ Exits 0 with the message, or 5 on timeout. --since <n> also returns a
 message that arrived after cursor n but before you started waiting.`,
 	"join": `
   ferry join 44-stray-stick-judge
-Use a machine someone lends you. Pairs, adds Host <box> to ~/.ssh/config,
-and makes the two machines feel like one: in the box, ~/his is your home
-and commands it lacks run here (there <cmd> forces it); its internet can
-be yours (a SOCKS tunnel inside your ssh session). Here, ferry shell
-mounts the box's home at ~/<box>. The box reaches you only through your
-own ssh session, through a private sshd on 127.0.0.1 that only its key
-opens. ferry leave <box> removes all of it.`,
+Use a machine someone lends you (a box). Pairs and adds Host <box> to
+~/.ssh/config. The box can't reach this machine: you reach into it. The
+only thing that comes back is its web traffic while ferry shell is open,
+to public internet addresses only, through a proxy here that refuses
+anything local or private (--no-internet, or ferry config box-internet
+off: never). ferry leave <box> removes all of it.`,
 	"shell": `
   ferry shell zman-box
-Starts what join set up if needed, mounts the box's home at ~/<box>
-(needs sshfs), then ssh into the box. While it is open, a server you start
-in the box (npm run dev on :3000) is http://localhost:3000 here too, on
-127.0.0.1 only; if 3000 is taken here it gets the next free port, and the
-box's tmux says which. ferry ports <box> lists them. --no-ports, or
-ferry config box-ports off, turns it off.`,
+Mounts the box's copy of your home at ~/<box> (needs sshfs), then ssh into
+the box. While it is open, a server you start in the box (npm run dev on
+:3000) is http://localhost:3000 here too, on 127.0.0.1 only; if 3000 is
+taken here it gets the next free port, and the box's tmux says which.
+ferry ports <box> lists them. --no-ports, or ferry config box-ports off,
+turns that off. The box's web traffic goes out through this machine
+(public addresses only) unless --no-internet.`,
+	"bring": `
+  cd ~/proj && ferry bring
+  ferry bring ~/proj
+Copies a folder inside your home into the box at the same path (so
+/home/you/proj is /home/you/proj there too), with your Claude sessions for
+it (claude --resume works there) and your ~/.claude/CLAUDE.md. Leaves out
+secret-looking files (.env*, *.pem, id_*, .ssh/, .aws/, .gnupg/, .netrc,
+credentials*.json, .git-credentials; --include-secrets brings them) and
+node_modules, .venv, __pycache__, target (--all brings them). Run it again
+to update; a file that is newer in the box is kept and listed. The lender
+can see everything you bring.`,
+	"take": `
+  cd ~/proj && ferry take
+Copies that folder and its Claude sessions back from the box to the same
+path here. A file that is newer here is kept and listed; nothing outside
+the folder is written, nothing through a symlink, and never git's config
+or hooks (from the box they could run commands here). What you take comes
+from the lender's machine: review it like any change from someone else.`,
 	"ports": `
   ferry ports zman-box
 Lists the box's ports ferry shell is sharing to 127.0.0.1 here.`,
 	"leave": `
   ferry leave zman-box
-Unmounts, stops the private sshd, removes the box's key and ssh config
-block, and forgets the pairing.`,
+Unmounts, closes your sessions to the box, removes its ssh config block
+(and anything an older ferry set up for the box to reach this machine),
+and forgets the pairing. Folders you took home stay.`,
 	"pipe": `
   ssh -o ProxyCommand='ferry pipe box 2222' friend@box
 Connects stdin and stdout to a port on a paired contact's localhost, over
@@ -169,7 +188,7 @@ OTHER
   ferry check                    is the rendezvous reachable? STUN? the port?
   ferry up                       stay online so contacts can reach you
   ferry mcp                      the same as MCP tools over stdio
-  ferry config [key value]       name, rendezvous, lanes, port, box-ports
+  ferry config [key value]       name, rendezvous, lanes, port, box-ports, box-internet
 `
 
 // reference prints the CLI reference as Markdown, from the command table,

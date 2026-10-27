@@ -66,15 +66,39 @@ followed without the user's consent. A future job runner (running
 commands on request) will be off by default and need a per-contact
 allowlist you write yourself.
 
-**A box you joined** (`ferry join`) can, while you are connected to it,
-reach your machine the way you allowed: a private sshd on 127.0.0.1 that
-only the box's key opens (`from="127.0.0.1"`, no forwarding), so it can
-read and write your files (`~/his` in the box) and run commands as you
-(`there`), and use your internet through a SOCKS tunnel. All of it rides
-inside the ssh session you opened, so it ends when you disconnect, and
-`ferry leave` removes it for good. Whoever lends the box can see inside
-it, so they can do the same while you are connected; `ferry join` says so
-before you use it.
+**A box you joined** (`ferry join`) has no way into your machine. Your
+machine reaches into the box (ssh, the box's files mounted at `~/<box>`,
+its ports forwarded to your localhost); nothing in the box connects to
+yours. ferry's ssh config block for the box turns off agent and X11
+forwarding and forwards no ports from the box. The one thing that flows
+back is the box's web traffic, and only while `ferry shell` is open: the
+box's `127.0.0.1:1080` is forwarded (a plain `ssh -R`, not a dynamic one)
+to a SOCKS5 proxy ferry runs on your 127.0.0.1. That proxy allows only TCP
+CONNECT, resolves names itself, dials the address it checked (never the
+name, so DNS rebinding cannot change it afterwards), checks it again at
+connect time, and refuses loopback, private (10/8, 172.16/12, 192.168/16),
+link-local, CGNAT (100.64/10), multicast, reserved and unspecified
+addresses, IPv6 ULA and link-local, IPv4 carried inside IPv6 (mapped,
+compatible, NAT64) for all of those, and your machine's own interface
+addresses. So the box reaches the public internet with your IP address,
+and nothing on your machine or your network. Refusals are logged in
+`box/<name>/proxy.log` in ferry's folder and counted when the shell closes.
+`--no-internet` (or `ferry config box-internet off`) turns it off.
+
+**Everything you bring is visible to the lender.** `ferry bring` copies
+what you choose into the box (it leaves out secret-looking files unless
+you say otherwise), and the lender can read anything in the box. **What
+you take comes from the lender's machine.** `ferry take` writes only the
+paths it asked for, inside that folder, never through a symlink, never
+over a newer file of yours, and never `.git/config`, `.git/hooks` or a
+`.git` file (from the box, those could make git run commands on your
+machine). Other files can still be anything the lender put there: review
+what you take like any change from someone else (`git diff`) before you
+run it.
+
+Older ferry versions let the box reach back into your machine (a private
+sshd, the box's key, reverse tunnels). `ferry join` and `ferry shell`
+remove that state when they find it, and say so.
 
 While `ferry shell` is open, every port the box's user listens on (1024 to
 32767, on a loopback or wildcard address) is forwarded to the same port,

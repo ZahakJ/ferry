@@ -150,7 +150,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		if id != nil {
 			name = id.Name
 		}
-		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "box_ports": !cfg.NoBoxPorts, "dir": keys.Dir()})
+		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "box_ports": !cfg.NoBoxPorts, "box_internet": !cfg.NoBoxInternet, "dir": keys.Dir()})
 		o.result("name             %s", name)
 		o.result("rendezvous       %s", cfg.Rendezvous)
 		lanes := "by size (2-16)"
@@ -168,6 +168,11 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 			boxPorts = "off"
 		}
 		o.result("box-ports        %s", boxPorts)
+		boxNet := "on (while ferry shell is open, a lent box's web traffic goes out through this machine, public addresses only)"
+		if cfg.NoBoxInternet {
+			boxNet = "off"
+		}
+		o.result("box-internet     %s", boxNet)
 		o.result("%s", o.dim("stored in "+keys.Dir()))
 	}
 	switch len(args) {
@@ -176,7 +181,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		return nil
 	case 2:
 	default:
-		return usagef("usage: ferry config [name|rendezvous|lanes|port|box-ports <value>]")
+		return usagef("usage: ferry config [name|rendezvous|lanes|port|box-ports|box-internet <value>]")
 	}
 	k, v := args[0], args[1]
 	// Edit the file as written, without environment overrides.
@@ -222,8 +227,17 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		default:
 			return usagef("box-ports is on or off")
 		}
+	case "box-internet":
+		switch v {
+		case "on":
+			cfg.NoBoxInternet = false
+		case "off":
+			cfg.NoBoxInternet = true
+		default:
+			return usagef("box-internet is on or off")
+		}
 	default:
-		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port, box-ports", k)
+		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port, box-ports, box-internet", k)
 	}
 	if err := cfg.Save(); err != nil {
 		return err

@@ -52,9 +52,6 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 	if !ok {
 		return fmt.Errorf("%w: %q is not a contact (ferry contacts)", errUnreachable, pos[0])
 	}
-	if st, err := loadBox(c.Name); err == nil {
-		ensureSSHD(st) // a joined box reaches back through it; best effort
-	}
 	ep, err := session.Online(ctx, cfg, id)
 	if err != nil {
 		return err

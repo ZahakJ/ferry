@@ -31,6 +31,9 @@ type Config struct {
 	Port int `json:"port,omitempty"`
 	// NoBoxPorts turns off ferry shell's sharing of a lent box's ports.
 	NoBoxPorts bool `json:"no_box_ports,omitempty"`
+	// NoBoxInternet turns off ferry shell's carrying of a lent box's web
+	// traffic (to public addresses only) through this machine.
+	NoBoxInternet bool `json:"no_box_internet,omitempty"`
 
 	// Not saved: test and debug switches.
 	Loopback bool `json:"-"`

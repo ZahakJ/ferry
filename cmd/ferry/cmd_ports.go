@@ -50,8 +50,8 @@ const (
 )
 
 // shareable says whether a box port is worth forwarding: not privileged, not
-// the box's own plumbing (its sshd, and the two tunnels back to this
-// machine), and not in Linux's ephemeral range, where programs put internal
+// the box's own plumbing (its sshd, the proxy's tunnel, and old ferry's way
+// back), and not in Linux's ephemeral range, where programs put internal
 // listeners on random ports (debuggers, language servers).
 func shareable(p int) bool {
 	return p >= 1024 && p < 32768 && p != 2222 && p != boxSocks && p != boxHisPort
@@ -264,10 +264,16 @@ func (c sshConn) Run(cmd string) ([]byte, error) {
 	return exec.CommandContext(ctx, "ssh", append(c.base(c.name), cmd)...).Output()
 }
 
-func (c sshConn) Control(op, spec string) error {
+func (c sshConn) Control(op, spec string) error { return c.control(op, "-L", spec) }
+
+// Remote adds or cancels a remote forward (box → here) on the master; only
+// the filtered proxy uses it.
+func (c sshConn) Remote(op, spec string) error { return c.control(op, "-R", spec) }
+
+func (c sshConn) control(op, dir, spec string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	out, err := exec.CommandContext(ctx, "ssh", c.base("-O", op, "-L", spec, c.name)...).CombinedOutput()
+	out, err := exec.CommandContext(ctx, "ssh", c.base("-O", op, dir, spec, c.name)...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%v: %s", err, strings.TrimSpace(string(out)))
 	}
@@ -286,9 +292,9 @@ func (c sshConn) exit() {
 	exec.CommandContext(ctx, "ssh", c.base("-O", "exit", c.name)...).Run()
 }
 
-// ensureMaster starts the box's ssh master unless one is up. It carries the
-// ssh config's tunnels (the box's way back here), so it is the connection the
-// box reaches this machine through while any ferry shell is open.
+// ensureMaster starts the box's ssh master unless one is up. The ssh config
+// gives it no tunnels; the one forward from the box (the filtered proxy) is
+// added on it by ferry shell.
 func ensureMaster(st *boxState) (sshConn, error) {
 	c := sshConn{name: st.Contact, cm: controlPath(st.Contact)}
 	d := boxDir(st.Contact)
@@ -354,43 +360,109 @@ func savePorts(name string, ps []boxPort) {
 	}
 }
 
-// watchPorts shares the box's ports until ctx ends. With several shells open
-// to one box, one of them watches (ports.lock); another takes over, from
-// ports.json, when it closes.
-func watchPorts(ctx context.Context, st *boxState, c sshConn) {
-	f := newForwarder(c)
-	f.save = func(ps []boxPort) { savePorts(st.Contact, ps) }
-	f.notify = func(p boxPort) {
-		msg := fmt.Sprintf("ferry: box port %d is http://localhost:%d on your machine", p.Box, p.Local)
-		if p.Local != p.Box {
-			msg += fmt.Sprintf(" (%d was taken there)", p.Box)
-		}
-		// a status-line message in the box's tmux: nothing is written over the screen
-		c.Run("tmux display-message -d 6000 '" + msg + "' 2>/dev/null; true")
+// boxWatch serves one box while ferry shell runs: it shares the box's ports
+// here and carries the box's web traffic through the filtered proxy. With
+// several shells open to one box, one of them serves it (ports.lock); another
+// takes over, from ports.json, when it closes.
+type boxWatch struct {
+	st          *boxState
+	c           sshConn
+	ports, inet bool
+
+	lock    *os.File
+	f       *forwarder
+	px      *boxProxy
+	pxSpec  string // the -R forward: box 127.0.0.1:1080 → px
+	conns   int64
+	refused int64
+}
+
+func (w *boxWatch) tryLock() bool {
+	if w.lock != nil {
+		return true
 	}
-	var lock *os.File
-	defer func() {
-		if lock != nil {
-			lock.Close()
+	lf, err := os.OpenFile(filepath.Join(boxDir(w.st.Contact), "ports.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return false
+	}
+	if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) != nil {
+		lf.Close()
+		return false
+	}
+	w.lock = lf
+	return true
+}
+
+// start serves the box now if no other shell does. o reports problems
+// before the login; later (o == nil) they go to the box's tmux status line.
+func (w *boxWatch) start(o *out) {
+	if !w.tryLock() {
+		return
+	}
+	if w.ports {
+		w.f = newForwarder(w.c)
+		w.f.save = func(ps []boxPort) { savePorts(w.st.Contact, ps) }
+		w.f.notify = func(p boxPort) {
+			msg := fmt.Sprintf("ferry: box port %d is http://localhost:%d on your machine", p.Box, p.Local)
+			if p.Local != p.Box {
+				msg += fmt.Sprintf(" (%d was taken there)", p.Box)
+			}
+			w.tell(msg)
 		}
-	}()
+		for _, p := range loadPorts(w.st.Contact) {
+			w.f.fwd[p.Box] = p
+		}
+	}
+	if w.inet {
+		if err := w.startProxy(); err != nil {
+			msg := fmt.Sprintf("the box's internet through this machine is off this time: %v", err)
+			if o != nil {
+				o.say("note: %s", msg)
+			} else {
+				w.tell("ferry: " + msg)
+			}
+		}
+	}
+}
+
+// tell shows a message in the box's tmux status line: nothing is written over the screen.
+func (w *boxWatch) tell(msg string) {
+	w.c.Run("tmux display-message -d 6000 " + shq(msg) + " 2>/dev/null; true")
+}
+
+func (w *boxWatch) startProxy() error {
+	px, err := newBoxProxy()
+	if err != nil {
+		return err
+	}
+	logPath := filepath.Join(boxDir(w.st.Contact), "proxy.log")
+	px.logf = func(format string, a ...any) {
+		if f, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600); err == nil {
+			fmt.Fprintf(f, "%s %s\n", time.Now().Format(time.RFC3339), fmt.Sprintf(format, a...))
+			f.Close()
+		}
+	}
+	go px.serve()
+	spec := fmt.Sprintf("127.0.0.1:%d:127.0.0.1:%d", boxSocks, px.port())
+	if err := w.c.Remote("forward", spec); err != nil {
+		px.close()
+		return err
+	}
+	w.px, w.pxSpec = px, spec
+	return nil
+}
+
+// run keeps the box's ports in step until ctx ends, taking over when the
+// shell that served the box closes.
+func (w *boxWatch) run(ctx context.Context) {
 	t := time.NewTicker(pollEvery)
 	defer t.Stop()
 	for {
-		if lock == nil {
-			if lf, err := os.OpenFile(filepath.Join(boxDir(st.Contact), "ports.lock"), os.O_CREATE|os.O_RDWR, 0o600); err == nil {
-				if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
-					lock = lf
-					for _, p := range loadPorts(st.Contact) {
-						f.fwd[p.Box] = p
-					}
-				} else {
-					lf.Close()
-				}
-			}
+		if w.lock == nil {
+			w.start(nil)
 		}
-		if lock != nil && ctx.Err() == nil {
-			f.tick() // a failed poll (box busy, link hiccup) just waits for the next
+		if w.lock != nil && w.f != nil && ctx.Err() == nil {
+			w.f.tick() // a failed poll (box busy, link hiccup) just waits for the next
 		}
 		select {
 		case <-ctx.Done():
@@ -399,6 +471,23 @@ func watchPorts(ctx context.Context, st *boxState, c sshConn) {
 		}
 	}
 }
+
+// stop ends the proxy and its tunnel and lets another shell take over.
+func (w *boxWatch) stop() {
+	if w.px != nil {
+		w.c.Remote("cancel", w.pxSpec) // fails once the master is gone: fine
+		w.px.close()
+		w.conns += w.px.conns.Load()
+		w.refused += w.px.refused.Load()
+		w.px = nil
+	}
+	if w.lock != nil {
+		w.lock.Close()
+		w.lock = nil
+	}
+}
+
+func (w *boxWatch) counts() (conns, refused int64) { return w.conns, w.refused }
 
 // ---- ferry ports ----
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"net"
 	"reflect"
 	"strings"
 	"testing"
@@ -189,7 +190,15 @@ func TestForwarder(t *testing.T) {
 // A forward's local port must not collide with one this machine uses on
 // either loopback address.
 func TestLocalFree(t *testing.T) {
-	p := freeLocalPort()
+	l, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := l.Addr().(*net.TCPAddr).Port
+	if localFree(p) {
+		t.Fatalf("port %d is in use but localFree says free", p)
+	}
+	l.Close()
 	if !localFree(p) {
 		t.Skipf("port %d not free on both loopbacks", p)
 	}

@@ -9,14 +9,25 @@ exit codes are part of the public interface.
 
 ### Added
 
-- `ferry join <code>` uses a machine someone lends you (a "box"), as if the
-  two were one: it pairs, adds `Host <box>` to `~/.ssh/config`, and sets up
-  the way back: inside your own ssh session, the box reaches your machine
-  (your home at `~/his`, commands it lacks run on yours, your internet as a
-  SOCKS proxy) through a private sshd on 127.0.0.1 that only the box's key
-  opens. `ferry shell <box>` mounts the box's home at `~/<box>` and logs in.
-  `ferry leave <box>` closes the sessions, unmounts, and removes the key,
-  the ssh config and the pairing.
+- `ferry join <code>` uses a machine someone lends you (a "box"): it pairs
+  and adds `Host <box>` to `~/.ssh/config`. It is a one-way mirror: your
+  machine reaches into the box and the box has no way back into yours.
+  `ferry shell <box>` mounts the box's copy of your home at `~/<box>` and
+  logs in. `ferry leave <box>` closes the sessions, unmounts, and removes
+  the ssh config block, the box's host key and the pairing.
+- `ferry bring [folder]` copies a folder inside your home into the box at
+  the same path, with your Claude sessions for it (so `claude --resume`
+  works there), your `~/.claude/CLAUDE.md` and your git name and email. It
+  leaves out secret-looking files (`--include-secrets`) and
+  `node_modules`/`.venv`/`__pycache__`/`target` (`--all`), sends only what
+  changed, and keeps files that are newer in the box. `ferry take [folder]`
+  copies it and its sessions back, never over a newer file here, never
+  outside the folder or through a symlink, and never git's config or hooks.
+- While `ferry shell` is open, the box's web traffic can go out through
+  your connection: the box's `127.0.0.1:1080` is a SOCKS5 proxy on your
+  machine that only connects to public internet addresses (it resolves
+  names itself and dials the checked address). `--no-internet` or
+  `ferry config box-internet off` turns it off.
 - `ferry pipe <contact>` with no port uses the one port the other side serves.
 - `ferry shell <box>` shares the box's ports: a server started in the box
   (`npm run dev` on :3000) is http://localhost:3000 on your machine while
@@ -25,6 +36,15 @@ exit codes are part of the public interface.
   `ferry shell --no-ports` or `ferry config box-ports off` turns it off.
   The shells to a box share one ssh connection; the last one to close ends
   it, so closing the terminal, or `ferry leave`, leaves nothing running.
+
+### Security
+
+- Boxes can no longer reach back into the borrower's machine. Earlier
+  builds of `ferry join` (unreleased) ran a private sshd that the box's key
+  opened, through a reverse tunnel in your ssh session, plus a dynamic
+  SOCKS tunnel that also reached your localhost and LAN; the box's lender
+  could read your home and run commands as you while you were connected.
+  `ferry join` and `ferry shell` now remove that state when they find it.
 
 ### Fixed
 
