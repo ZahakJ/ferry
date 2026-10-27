@@ -9,6 +9,22 @@ exit codes are part of the public interface.
 
 ### Added
 
+- `ferry join <code>` uses a machine someone lends you (a "box"), as if the
+  two were one: it pairs, adds `Host <box>` to `~/.ssh/config`, and sets up
+  the way back: inside your own ssh session, the box reaches your machine
+  (your home at `~/his`, commands it lacks run on yours, your internet as a
+  SOCKS proxy) through a private sshd on 127.0.0.1 that only the box's key
+  opens. `ferry shell <box>` mounts the box's home at `~/<box>` and logs in.
+  `ferry leave <box>` closes the sessions, unmounts, and removes the key,
+  the ssh config and the pairing.
+- `ferry pipe <contact>` with no port uses the one port the other side serves.
+
+### Fixed
+
+- A running `ferry up` that lost the rendezvous (an outage or a restart)
+  stayed unreachable until restarted. It now reconnects within 15 s; the
+  harness restarts the rendezvous to check.
+
 - `ferry pipe <contact> <port>` connects stdin/stdout to a TCP port on a
   paired contact's localhost over the direct link, so ssh works with no
   open ports: `ssh -o ProxyCommand='ferry pipe box 22' me@box`.

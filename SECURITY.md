@@ -66,6 +66,16 @@ followed without the user's consent. A future job runner (running
 commands on request) will be off by default and need a per-contact
 allowlist you write yourself.
 
+**A box you joined** (`ferry join`) can, while you are connected to it,
+reach your machine the way you allowed: a private sshd on 127.0.0.1 that
+only the box's key opens (`from="127.0.0.1"`, no forwarding), so it can
+read and write your files (`~/his` in the box) and run commands as you
+(`there`), and use your internet through a SOCKS tunnel. All of it rides
+inside the ssh session you opened, so it ends when you disconnect, and
+`ferry leave` removes it for good. Whoever lends the box can see inside
+it, so they can do the same while you are connected; `ferry join` says so
+before you use it.
+
 **Someone with access to your machine** can read `~/.config/ferry`
 (mode 0700): your identity key, contacts and message log. ferry does not
 defend against that; use disk encryption.

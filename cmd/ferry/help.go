@@ -67,6 +67,23 @@ Delivered live if they are online, otherwise left in their mailbox.`,
   ferry wait --from sam --timeout 10m
 Exits 0 with the message, or 5 on timeout. --since <n> also returns a
 message that arrived after cursor n but before you started waiting.`,
+	"join": `
+  ferry join 44-stray-stick-judge
+Use a machine someone lends you. Pairs, adds Host <box> to ~/.ssh/config,
+and makes the two machines feel like one: in the box, ~/his is your home
+and commands it lacks run here (there <cmd> forces it); its internet can
+be yours (a SOCKS tunnel inside your ssh session). Here, ferry shell
+mounts the box's home at ~/<box>. The box reaches you only through your
+own ssh session, through a private sshd on 127.0.0.1 that only its key
+opens. ferry leave <box> removes all of it.`,
+	"shell": `
+  ferry shell zman-box
+Starts what join set up if needed, mounts the box's home at ~/<box>
+(needs sshfs), then ssh into the box.`,
+	"leave": `
+  ferry leave zman-box
+Unmounts, stops the private sshd, removes the box's key and ssh config
+block, and forgets the pairing.`,
 	"pipe": `
   ssh -o ProxyCommand='ferry pipe box 2222' friend@box
 Connects stdin and stdout to a port on a paired contact's localhost, over

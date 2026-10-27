@@ -127,10 +127,13 @@ unblock_udp() { ns natA nft flush chain ip filter between; }
 ns hostA ping -c1 -W2 203.0.113.1 >/dev/null && ns hostB ping -c1 -W2 203.0.113.1 >/dev/null && ok "both homes reach the internet through NAT" || bad "no route through NAT"
 
 step "rendezvous"
-ip netns exec rv env PORT=4001 CONCORD_GUEST_PORT=8080 CONCORD_RELAY_SEED=$(printf 'cd%.0s' $(seq 32)) \
-	CONCORD_PUBLIC_HOST=203.0.113.1 CONCORD_TURN_SECRET=harness-secret CONCORD_TURN_RELAY_IP=203.0.113.1 \
-	CONCORD_TURN_ALLOW_PRIVATE=1 "$RVBIN" > "$LOG/rv.log" 2>&1 &
-PIDS="$PIDS $!"
+start_rv() {
+	ip netns exec rv env PORT=4001 CONCORD_GUEST_PORT=8080 CONCORD_RELAY_SEED=$(printf 'cd%.0s' $(seq 32)) \
+		CONCORD_PUBLIC_HOST=203.0.113.1 CONCORD_TURN_SECRET=harness-secret CONCORD_TURN_RELAY_IP=203.0.113.1 \
+		CONCORD_TURN_ALLOW_PRIVATE=1 "$RVBIN" >> "$LOG/rv.log" 2>&1 &
+	RVPID=$!; PIDS="$PIDS $RVPID"
+}
+start_rv
 ip netns exec rv "$BIN/stund" -l 203.0.113.1:3479 2> "$LOG/stund.log" &
 PIDS="$PIDS $!"
 for i in $(seq 100); do grep -q '^PeerID' "$LOG/rv.log" 2>/dev/null && break; sleep 0.1; done
@@ -436,6 +439,12 @@ $FC config name eve >/dev/null 2>&1; cp "$HA/contacts.json" "$HC/contacts.json"
 if echo hi | timeout 60 $FC pipe sam 7000 > "$LOG/pipe-eve.out" 2> "$LOG/pipe-eve.err"; then bad "an unpaired peer got a pipe: $(cat "$LOG/pipe-eve.out")"
 else ok "an unpaired peer is refused: $(tail -1 "$LOG/pipe-eve.err" | sed 's/.*ferry: //' | cut -c1-80)"; fi
 sleep 1; grep -q "refused .*not a contact" "$LOG/pipe-up.err" && ok "the stranger is logged on sam's side" || bad "stranger not logged"
+# The rendezvous restarts (an outage, a deploy): a running ferry up must come back on its own.
+kill "$RVPID"; sleep 3; start_rv
+for i in $(seq 100); do [ "$(grep -c '^PeerID' "$LOG/rv.log")" -ge 2 ] && break; sleep 0.1; done
+sleep 35
+got_sum=$(echo after-restart | timeout 60 $FA pipe sam 7000 2> "$LOG/pipe-rv.err")
+[ "$got_sum" = "$(echo after-restart | sha256sum | cut -d' ' -f1)" ] && ok "after the rendezvous restarted, sam's running ferry up was reachable again" || bad "sam unreachable after a rendezvous restart: $(tail -1 "$LOG/pipe-rv.err")"
 fi
 
 step "result"

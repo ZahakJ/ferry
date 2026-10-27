@@ -30,6 +30,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/network"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/peerstore"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	"github.com/libp2p/go-libp2p/p2p/protocol/circuitv2/client"
 	ma "github.com/multiformats/go-multiaddr"
@@ -105,19 +106,32 @@ func (n *Node) Reserve(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("rendezvous refused to pass connection requests to this machine: %w", err)
 	}
+	got := time.Now()
+	reserveLife := func(exp time.Time) time.Duration { return exp.Sub(got) }
 	go func() {
+		// Every 15 s: if the connection to the rendezvous dropped (a blip on
+		// either side), reconnect and reserve again at once; otherwise renew
+		// at half the reservation's life. Without the first part a machine
+		// running ferry up stays unreachable after any outage.
 		for {
-			wait := time.Until(r.Expiration) / 2
-			if wait < 10*time.Second {
-				wait = 10 * time.Second
-			}
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(wait):
+			case <-time.After(15 * time.Second):
+			}
+			dropped := n.Host.Network().Connectedness(n.RV.ID) != network.Connected
+			if !dropped && time.Until(r.Expiration) > reserveLife(r.Expiration)/2 {
+				continue
+			}
+			if dropped {
+				// its addresses may have aged out of the peerstore by now
+				n.Host.Peerstore().AddAddrs(n.RV.ID, n.RV.Addrs, peerstore.PermanentAddrTTL)
+				cctx, cancel := context.WithTimeout(ctx, 20*time.Second)
+				n.Host.Connect(cctx, n.RV)
+				cancel()
 			}
 			if nr, err := client.Reserve(ctx, n.Host, n.RV); err == nil {
-				r = nr
+				r, got = nr, time.Now()
 			}
 		}
 	}()

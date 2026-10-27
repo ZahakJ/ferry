@@ -293,6 +293,11 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 // servePipe connects a contact to one allowed port on localhost.
 func (a *Local) servePipe(s *session.Session, c keys.Contact, port int) {
 	a.mu.Lock()
+	if port == 0 && len(a.pipes) == 1 {
+		for p := range a.pipes { // no port named: the one this machine serves
+			port = p
+		}
+	}
 	allowed := a.pipes[port]
 	a.mu.Unlock()
 	if !allowed {

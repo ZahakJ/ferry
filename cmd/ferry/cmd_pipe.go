@@ -27,12 +27,14 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 	if err != nil {
 		return err
 	}
-	if len(pos) != 2 {
-		return usagef("usage: ferry pipe <contact> <port>")
+	if len(pos) < 1 || len(pos) > 2 {
+		return usagef("usage: ferry pipe <contact> [port]")
 	}
-	port, err := strconv.Atoi(pos[1])
-	if err != nil || port < 1 || port > 65535 {
-		return usagef("%q is not a port", pos[1])
+	port := 0 // none named: the one port the other side serves, if it serves exactly one
+	if len(pos) == 2 {
+		if port, err = strconv.Atoi(pos[1]); err != nil || port < 1 || port > 65535 {
+			return usagef("%q is not a port", pos[1])
+		}
 	}
 	cfg, err := session.LoadConfig()
 	if err != nil {
@@ -49,6 +51,9 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 	c, ok := cs[pos[0]]
 	if !ok {
 		return fmt.Errorf("%w: %q is not a contact (ferry contacts)", errUnreachable, pos[0])
+	}
+	if st, err := loadBox(c.Name); err == nil {
+		ensureSSHD(st) // a joined box reaches back through it; best effort
 	}
 	ep, err := session.Online(ctx, cfg, id)
 	if err != nil {
@@ -81,7 +86,7 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 	}
 	defer l.Close()
 	if os.Getenv("FERRY_PIPE_VERBOSE") != "" {
-		o.say("ferry: pipe to %s port %d is up (%s)", c.Name, port, l.Path)
+		o.say("ferry: pipe to %s is up (%s)", c.Name, l.Path)
 	}
 	_, _, err = pipe.Pump(ctx, l, os.Stdin, os.Stdout, func() { os.Stdout.Close() })
 	if errors.Is(err, context.Canceled) {

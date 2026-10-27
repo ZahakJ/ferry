@@ -85,6 +85,22 @@ STUN (how each machine learns its public address) defaults to a public
 server. To use your own, set `FERRY_STUN=stun:stun.example.org:3478`, or
 `"stun": ["stun:…"]` in `config.json` in `ferry config`'s folder.
 
+## Borrow a machine
+
+Someone lends you a box on their machine (`lend` / `ferry box`). You get a
+code and run:
+
+```sh
+ferry join 44-stray-stick-judge     # once
+ferry shell zman-box                # or just: ssh zman-box
+```
+
+In the box, `~/his` is your home and `there <cmd>` runs on your machine.
+Commands the box lacks fall back to yours. `res` adds up both machines.
+On your machine, `~/zman-box` is the box's home (with sshfs). `ferry leave
+zman-box` undoes all of it. See SECURITY.md for what the box, and its
+lender, can reach while you are connected.
+
 ## SSH to a paired machine
 
 `ferry pipe` connects stdin/stdout to a TCP port on a contact's localhost,
