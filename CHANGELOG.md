@@ -18,6 +18,13 @@ exit codes are part of the public interface.
   `ferry leave <box>` closes the sessions, unmounts, and removes the key,
   the ssh config and the pairing.
 - `ferry pipe <contact>` with no port uses the one port the other side serves.
+- `ferry shell <box>` shares the box's ports: a server started in the box
+  (`npm run dev` on :3000) is http://localhost:3000 on your machine while
+  the shell is open, on 127.0.0.1 only, or on the next free port if that one
+  is taken (the box's tmux says which). `ferry ports <box>` lists them;
+  `ferry shell --no-ports` or `ferry config box-ports off` turns it off.
+  The shells to a box share one ssh connection; the last one to close ends
+  it, so closing the terminal, or `ferry leave`, leaves nothing running.
 
 ### Fixed
 

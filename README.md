@@ -97,9 +97,18 @@ ferry shell zman-box                # or just: ssh zman-box
 
 In the box, `~/his` is your home and `there <cmd>` runs on your machine.
 Commands the box lacks fall back to yours. `res` adds up both machines.
-On your machine, `~/zman-box` is the box's home (with sshfs). `ferry leave
-zman-box` undoes all of it. See SECURITY.md for what the box, and its
-lender, can reach while you are connected.
+On your machine, `~/zman-box` is the box's home (with sshfs).
+
+While `ferry shell` is open, a server you start in the box is on your
+machine too: run `npm run dev` there and open http://localhost:3000 here.
+ferry checks the box every 2 s and forwards each port you listen on
+(1024-32767) to 127.0.0.1 on your machine; if that port is taken here it
+uses the next free one, and the box's tmux status line says which.
+`ferry ports zman-box` lists them. Nothing goes the other way on its own.
+`ferry shell --no-ports`, or `ferry config box-ports off`, turns it off.
+
+`ferry leave zman-box` undoes all of it. See SECURITY.md for what the box,
+and its lender, can reach while you are connected.
 
 ## SSH to a paired machine
 

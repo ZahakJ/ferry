@@ -76,6 +76,17 @@ inside the ssh session you opened, so it ends when you disconnect, and
 it, so they can do the same while you are connected; `ferry join` says so
 before you use it.
 
+While `ferry shell` is open, every port the box's user listens on (1024 to
+32767, on a loopback or wildcard address) is forwarded to the same port,
+or the next free one, on your machine's 127.0.0.1, and never to another
+interface. That makes whatever the box serves reachable to anyone on your
+machine: every local user and program, and a web page in your browser
+that knows the port. The box, and so its lender, choose what is served
+there. Ports never go the other way (yours into the box) unless you
+forward them yourself. `ferry shell --no-ports` or
+`ferry config box-ports off` turns it off; the forwards end with the last
+`ferry shell` to the box.
+
 **Someone with access to your machine** can read `~/.config/ferry`
 (mode 0700): your identity key, contacts and message log. ferry does not
 defend against that; use disk encryption.

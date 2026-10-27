@@ -150,7 +150,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		if id != nil {
 			name = id.Name
 		}
-		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "dir": keys.Dir()})
+		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "box_ports": !cfg.NoBoxPorts, "dir": keys.Dir()})
 		o.result("name             %s", name)
 		o.result("rendezvous       %s", cfg.Rendezvous)
 		lanes := "by size (2-16)"
@@ -163,6 +163,11 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 			port = fmt.Sprintf("udp %d", cfg.Port)
 		}
 		o.result("port             %s", port)
+		boxPorts := "on (ferry shell shares a lent box's ports to localhost here)"
+		if cfg.NoBoxPorts {
+			boxPorts = "off"
+		}
+		o.result("box-ports        %s", boxPorts)
 		o.result("%s", o.dim("stored in "+keys.Dir()))
 	}
 	switch len(args) {
@@ -171,7 +176,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		return nil
 	case 2:
 	default:
-		return usagef("usage: ferry config [name|rendezvous|lanes|port <value>]")
+		return usagef("usage: ferry config [name|rendezvous|lanes|port|box-ports <value>]")
 	}
 	k, v := args[0], args[1]
 	// Edit the file as written, without environment overrides.
@@ -208,8 +213,17 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 			return usagef("port is a UDP port number, or 0 for any")
 		}
 		cfg.Port = n
+	case "box-ports":
+		switch v {
+		case "on":
+			cfg.NoBoxPorts = false
+		case "off":
+			cfg.NoBoxPorts = true
+		default:
+			return usagef("box-ports is on or off")
+		}
 	default:
-		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port", k)
+		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port, box-ports", k)
 	}
 	if err := cfg.Save(); err != nil {
 		return err

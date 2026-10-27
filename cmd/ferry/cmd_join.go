@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ZahakJ/ferry/internal/keys"
+	"github.com/ZahakJ/ferry/internal/session"
 )
 
 // A lent box (see `lend` / `ferry box`) is a machine someone else lends you,
@@ -156,12 +158,14 @@ func cmdJoin(ctx context.Context, o *out, args []string) error {
 }
 
 func cmdShell(ctx context.Context, o *out, args []string) error {
-	pos, err := parse(flag.NewFlagSet("shell", flag.ContinueOnError), args)
+	fs := flag.NewFlagSet("shell", flag.ContinueOnError)
+	noPorts := fs.Bool("no-ports", false, "don't share the box's ports to localhost here (ferry config box-ports off: never)")
+	pos, err := parse(fs, args)
 	if err != nil {
 		return err
 	}
 	if len(pos) != 1 {
-		return usagef("usage: ferry shell <box>")
+		return usagef("usage: ferry shell [--no-ports] <box>")
 	}
 	st, err := loadBox(pos[0])
 	if err != nil {
@@ -183,7 +187,74 @@ func cmdShell(ctx context.Context, o *out, args []string) error {
 	if err != nil {
 		return err
 	}
-	return syscall.Exec(ssh, []string{"ssh", "-t", st.Contact}, os.Environ())
+	if cfg, err := session.LoadFileConfig(); *noPorts || (err == nil && cfg.NoBoxPorts) {
+		return syscall.Exec(ssh, []string{"ssh", "-t", st.Contact}, os.Environ())
+	}
+	return shellWithPorts(ctx, o, st, ssh)
+}
+
+// shellWithPorts logs in over the box's ssh master and shares the box's
+// ports here while the session lasts. The last shell to close ends the
+// master, and with it the box's way back to this machine.
+func shellWithPorts(ctx context.Context, o *out, st *boxState, ssh string) error {
+	// Every open shell holds shell.lock shared; whoever leaves it unshared is the last.
+	lf, err := os.OpenFile(filepath.Join(boxDir(st.Contact), "shell.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return err
+	}
+	defer lf.Close()
+	syscall.Flock(int(lf.Fd()), syscall.LOCK_SH)
+	c, err := ensureMaster(st)
+	if err != nil && ctx.Err() != nil {
+		return ctx.Err() // ^C at the login
+	}
+	if err != nil {
+		o.say("note: %v; logging in without sharing the box's ports", err)
+		lf.Close()
+		return syscall.Exec(ssh, []string{"ssh", "-t", st.Contact}, os.Environ())
+	}
+	// A closed terminal hangs up only the session leader, which is now this
+	// process, not ssh: pass it on, then stay to clean up after it.
+	hup := make(chan os.Signal, 1)
+	signal.Notify(hup, syscall.SIGHUP)
+	defer signal.Stop(hup)
+	cmd := exec.Command(ssh, "-t", "-S", strings.ReplaceAll(c.cm, "%", "%%"), "-o", "ControlMaster=no", "-o", "ClearAllForwardings=yes", st.Contact)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	wctx, stop := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { watchPorts(wctx, st, c); close(done) }()
+	go func() { // ferry shell hung up or told to stop: so is its ssh
+		var sig os.Signal
+		select {
+		case sig = <-hup:
+		case <-ctx.Done():
+			sig = syscall.SIGTERM
+		case <-wctx.Done():
+			return
+		}
+		cmd.Process.Signal(sig)
+		select {
+		case <-wctx.Done():
+		case <-time.After(5 * time.Second):
+			cmd.Process.Kill()
+		}
+	}()
+	werr := cmd.Wait()
+	stop()
+	<-done
+	if syscall.Flock(int(lf.Fd()), syscall.LOCK_EX|syscall.LOCK_NB) == nil {
+		c.exit()
+		os.Remove(portsFile(st.Contact))
+	}
+	lf.Close()
+	var ee *exec.ExitError
+	if errors.As(werr, &ee) {
+		os.Exit(ee.ExitCode()) // the box shell's own status, like plain ssh
+	}
+	return werr
 }
 
 func cmdLeave(ctx context.Context, o *out, args []string) error {
@@ -203,6 +274,7 @@ func cmdLeave(ctx context.Context, o *out, args []string) error {
 		unmount(st.Mount)
 		o.say("Unmounted %s.", st.Mount)
 	}
+	stopMaster(name)    // ferry shell's connection, its shared ports, and the sessions on it
 	stopPipes(name)     // your open ssh sessions to the box, and the tunnels in them
 	os.Remove(st.Mount) // only if empty
 	stopSSHD(st)

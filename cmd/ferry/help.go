@@ -79,7 +79,14 @@ opens. ferry leave <box> removes all of it.`,
 	"shell": `
   ferry shell zman-box
 Starts what join set up if needed, mounts the box's home at ~/<box>
-(needs sshfs), then ssh into the box.`,
+(needs sshfs), then ssh into the box. While it is open, a server you start
+in the box (npm run dev on :3000) is http://localhost:3000 here too, on
+127.0.0.1 only; if 3000 is taken here it gets the next free port, and the
+box's tmux says which. ferry ports <box> lists them. --no-ports, or
+ferry config box-ports off, turns it off.`,
+	"ports": `
+  ferry ports zman-box
+Lists the box's ports ferry shell is sharing to 127.0.0.1 here.`,
 	"leave": `
   ferry leave zman-box
 Unmounts, stops the private sshd, removes the box's key and ssh config
@@ -162,7 +169,7 @@ OTHER
   ferry check                    is the rendezvous reachable? STUN? the port?
   ferry up                       stay online so contacts can reach you
   ferry mcp                      the same as MCP tools over stdio
-  ferry config [key value]       name, rendezvous, lanes, port
+  ferry config [key value]       name, rendezvous, lanes, port, box-ports
 `
 
 // reference prints the CLI reference as Markdown, from the command table,
