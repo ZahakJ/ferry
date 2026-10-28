@@ -85,94 +85,6 @@ STUN (how each machine learns its public address) defaults to a public
 server. To use your own, set `FERRY_STUN=stun:stun.example.org:3478`, or
 `"stun": ["stun:…"]` in `config.json` in `ferry config`'s folder.
 
-## Your own devices as one
-
-Link your laptop, desktop and GPU box once, and they work like one machine:
-
-```sh
-ferry mine add                 # on one device: prints a code
-ferry mine join 12-oak-lamp-sky   # on another; both screens show two words, both say y
-ferry mine service             # on each: keep ferry up running (systemd / launchd)
-```
-
-Then, on any of them:
-
-```sh
-ls ~/m/desktop                 # the desktop's home, mounted while it is reachable
-on desktop make test           # runs there; stdin, output and exit code pass through
-on gpu python train.py         # on whichever reachable device has an NVIDIA GPU
-ferry mine                     # which are online, their CPU, RAM, GPU and load
-ferry mine res                 # all of them added up
-ferry mine fwd desktop 3000    # its port 3000 at http://localhost:3000 here
-claude --resume                # lists the Claude sessions of every device
-```
-
-`on` runs in the same folder when you are in your home (or in
-`~/m/<device>`), relative to the home: `/home/you/x` on Linux is
-`/Users/you/x` on a Mac. `ferry mine fallback on` makes a command that is
-missing here run on the first device that has it, with one dim line
-saying where. `ferry mine sync` pulls Claude sessions now (ferry up does
-it every minute); it only ever adds: a session that went on elsewhere
-gets the new lines, and one that went on on two devices at once is kept
-as both. Settings, credentials and memory stay on each device.
-
-Linking a third device to either of the first two links it with all of
-them. `ferry mine rm <device>` takes one out, on every device (those that
-are offline are told when they are next online).
-
-Your devices get full access to each other: each runs a private sshd on
-its own 127.0.0.1 that only their keys open, reached only through ferry.
-So one compromised device reaches all of them. A friend you `ferry pair`
-with never gets any of this. See SECURITY.md.
-
-## Borrow a machine
-
-Someone lends you a box on their machine (`lend`). You get a code and run:
-
-```sh
-ferry join 44-stray-stick-judge     # once
-ferry shell zman-box                # or just: ssh zman-box
-```
-
-It is a one-way mirror: your machine reaches into the box, and the box has
-no way back into yours. To work on a project there, copy it in:
-
-```sh
-cd ~/proj && ferry bring            # lands at the same path in the box, with your Claude sessions
-cd ~/proj && ferry take             # copies it (and sessions started there) back here
-```
-
-`ferry bring` puts the folder at **the same path** in the box
-(`/home/you/proj`), so paths in your notes, scripts and Claude sessions mean
-the same thing, and `claude --resume` there lists the sessions you had here.
-It also brings your `~/.claude/CLAUDE.md` and your git name and email. It
-leaves out secret-looking files (`.env*`, `*.pem`, `id_*`, `.ssh/`, `.aws/`,
-`.gnupg/`, `.netrc`, `credentials*.json`, `.git-credentials`, a `.git/config`
-with a token in a URL; `--include-secrets` brings them) and `node_modules`,
-`.venv`, `__pycache__`, `target` (`--all`). Running it again sends only what
-changed and keeps anything that is newer in the box. `ferry take` never
-overwrites a file that is newer here, writes nothing outside the folder or
-through a symlink, and keeps your own `.git/config` and hooks.
-
-On your machine, `~/zman-box` is the box's copy of your home (with sshfs),
-so your own editor works on what you brought.
-
-While `ferry shell` is open, a server you start in the box is on your
-machine too: run `npm run dev` there and open http://localhost:3000 here.
-ferry checks the box every 2 s and forwards each port you listen on
-(1024-32767) to 127.0.0.1 on your machine; if that port is taken here it
-uses the next free one, and the box's tmux status line says which.
-`ferry ports zman-box` lists them. `ferry shell --no-ports`, or
-`ferry config box-ports off`, turns it off.
-
-Also while it is open, the box's web traffic can go out through your
-connection (useful when the lender limits the box's own): the box's
-`127.0.0.1:1080` is a SOCKS proxy that ferry runs on your machine, which
-only connects to public internet addresses. `ferry join --no-internet`,
-`ferry shell --no-internet` or `ferry config box-internet off` turns it off.
-
-`ferry leave zman-box` undoes all of it. See SECURITY.md.
-
 ## SSH to a paired machine
 
 `ferry pipe` connects stdin/stdout to a TCP port on a contact's localhost,
@@ -191,6 +103,9 @@ ssh -o ProxyCommand='ferry pipe box 22' me@box
 # or in ~/.ssh/config:  Host box
 #                         ProxyCommand ferry pipe box 22
 ```
+
+If the other side allows exactly one port, `ferry pipe box` alone reaches
+it. With `ferry up` running here, pipes go through it.
 
 ## How it works
 

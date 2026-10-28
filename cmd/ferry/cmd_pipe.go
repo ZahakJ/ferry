@@ -53,15 +53,10 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 	if !ok {
 		return fmt.Errorf("%w: %q is not a contact (ferry contacts)", errUnreachable, pos[0])
 	}
-	// One of your own devices, no port named: its mesh sshd (ferry mine).
-	want := "pipe"
-	if port == 0 && c.Mine() {
-		want = "mine-ssh"
-	}
 	// With ferry up running, the pipe goes through it, so this machine is
 	// one peer at the rendezvous however many pipes it has open.
 	if agent.Running() {
-		err := agent.Pipe(ctx, c.Name, want, port, os.Stdin, os.Stdout, func() { os.Stdout.Close() })
+		err := agent.Pipe(ctx, c.Name, port, os.Stdin, os.Stdout, func() { os.Stdout.Close() })
 		if !errors.Is(err, agent.ErrNoAgentPipe) {
 			if errors.Is(err, context.Canceled) {
 				return nil
@@ -87,7 +82,7 @@ func cmdPipe(ctx context.Context, o *out, args []string) error {
 		return err
 	}
 	defer s.Close()
-	if err := s.Conn.SendJSON(session.Intent{Want: want, Port: port}); err != nil {
+	if err := s.Conn.SendJSON(session.Intent{Want: "pipe", Port: port}); err != nil {
 		return err
 	}
 	var r session.IntentReply

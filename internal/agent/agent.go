@@ -118,83 +118,7 @@ type Local struct {
 	busy       map[string]bool // contacts with a transfer in progress
 	stop       context.CancelFunc
 	pipes      map[int]bool // local ports contacts may pipe to; none by default
-	meshPort   func() int   // the mesh sshd's port, for your own devices only (ferry mine); 0: none
-	handlers   map[string]func(*session.Session, keys.Contact, session.Intent)
-	ipc        map[string]func(context.Context, json.RawMessage) (any, error)
 	logf       func(format string, a ...any)
-}
-
-// ServeMesh lets this owner's own devices (KindMine contacts, and nobody
-// else) reach the mesh sshd on the localhost port port() returns.
-func (a *Local) ServeMesh(port func() int) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.meshPort = port
-}
-
-func (a *Local) mesh() int {
-	a.mu.Lock()
-	f := a.meshPort
-	a.mu.Unlock()
-	if f == nil {
-		return 0
-	}
-	return f()
-}
-
-// Handle serves an extra kind of intent. Every intent named mine-* is
-// refused, before fn runs, to anyone but this owner's own devices. fn
-// answers with an IntentReply itself.
-func (a *Local) Handle(want string, fn func(*session.Session, keys.Contact, session.Intent)) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.handlers == nil {
-		a.handlers = map[string]func(*session.Session, keys.Contact, session.Intent){}
-	}
-	a.handlers[want] = fn
-}
-
-// HandleIPC serves an extra request on the agent socket (this user only).
-func (a *Local) HandleIPC(op string, fn func(context.Context, json.RawMessage) (any, error)) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.ipc == nil {
-		a.ipc = map[string]func(context.Context, json.RawMessage) (any, error){}
-	}
-	a.ipc[op] = fn
-}
-
-// Logf reports through the agent's log (ferry up's output).
-func (a *Local) Logf(format string, args ...any) { a.log(format, args...) }
-
-// Ask opens a session to c, sends one intent and returns the answer.
-func (a *Local) Ask(ctx context.Context, c keys.Contact, in session.Intent) (session.IntentReply, error) {
-	ep, err := a.online(ctx)
-	if err != nil {
-		return session.IntentReply{}, err
-	}
-	dctx, cancel := context.WithTimeout(ctx, 20*time.Second)
-	defer cancel()
-	s, err := ep.Dial(dctx, c)
-	if err != nil {
-		return session.IntentReply{}, err
-	}
-	defer s.Close()
-	done := make(chan error, 1)
-	var r session.IntentReply
-	go func() {
-		if err := s.Conn.SendJSON(in); err != nil {
-			done <- err
-			return
-		}
-		done <- s.Conn.RecvJSON(&r)
-	}()
-	select {
-	case err := <-done:
-		return r, err
-	case <-dctx.Done():
-		return r, dctx.Err()
-	}
 }
 
 // AllowPipes lets contacts open pipes to these ports on this machine's
@@ -327,13 +251,6 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 	if s.Conn.RecvJSON(&in) != nil {
 		return
 	}
-	// Your own devices (ferry mine) get full access to each other; a plain
-	// contact, a friend, never gets any of it.
-	if strings.HasPrefix(in.Want, "mine-") && !c.Mine() {
-		a.log("refused %s from %s: a plain contact, not one of your own devices", in.Want, c.Name)
-		s.Conn.SendJSON(session.IntentReply{Why: "this machine gives that only to its owner's own devices"})
-		return
-	}
 	switch in.Want {
 	case "msg":
 		s.Conn.SendJSON(session.IntentReply{OK: true})
@@ -368,21 +285,7 @@ func (a *Local) serve(s *session.Session, c keys.Contact) {
 		a.receiveFile(s, c)
 	case "pipe":
 		a.servePipe(s, c, in.Port)
-	case "mine-ssh":
-		port := a.mesh()
-		if port == 0 {
-			s.Conn.SendJSON(session.IntentReply{Why: "the mesh sshd is not running on this machine (is ferry up running there?)"})
-			return
-		}
-		a.pipeTo(s, c, port, "mesh sshd")
 	default:
-		a.mu.Lock()
-		fn := a.handlers[in.Want]
-		a.mu.Unlock()
-		if fn != nil {
-			fn(s, c, in)
-			return
-		}
 		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("this machine does not accept %q", in.Want)})
 	}
 }
@@ -397,22 +300,14 @@ func (a *Local) servePipe(s *session.Session, c keys.Contact, port int) {
 	}
 	allowed := a.pipes[port]
 	a.mu.Unlock()
-	if mp := a.mesh(); mp != 0 && port == mp && !c.Mine() {
-		allowed = false // the mesh sshd is for your own devices, whatever --allow-pipe says
-	}
 	if !allowed {
 		a.log("refused pipe from %s to port %d: not allowed (ferry up --allow-pipe)", c.Name, port)
 		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("port %d is not open for pipes on this machine", port)})
 		return
 	}
-	a.pipeTo(s, c, port, fmt.Sprintf("port %d", port))
-}
-
-// pipeTo connects an accepted session to a port on localhost.
-func (a *Local) pipeTo(s *session.Session, c keys.Contact, port int, what string) {
 	tcp, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), 5*time.Second)
 	if err != nil {
-		a.log("pipe from %s to %s failed: %v", c.Name, what, err)
+		a.log("pipe from %s to port %d failed: %v", c.Name, port, err)
 		s.Conn.SendJSON(session.IntentReply{Why: fmt.Sprintf("nothing is listening on port %d", port)})
 		return
 	}
@@ -424,18 +319,18 @@ func (a *Local) pipeTo(s *session.Session, c keys.Contact, port int, what string
 	defer cancel()
 	l, err := s.Link(ctx, 1)
 	if err != nil {
-		a.log("pipe from %s to %s: no direct path: %v", c.Name, what, err)
+		a.log("pipe from %s to port %d: no direct path: %v", c.Name, port, err)
 		return
 	}
 	defer l.Close()
-	a.log("pipe open: %s -> %s (%s)", c.Name, what, l.Path)
+	a.log("pipe open: %s -> port %d (%s)", c.Name, port, l.Path)
 	start := time.Now()
 	sent, got, err := pipe.Pump(ctx, l, tcp, tcp, func() { tcp.(*net.TCPConn).CloseWrite() })
 	why := "closed"
 	if err != nil {
 		why = err.Error()
 	}
-	a.log("pipe closed: %s -> %s after %s, %d bytes in, %d out (%s)", c.Name, what, time.Since(start).Round(time.Second), got, sent, why)
+	a.log("pipe closed: %s -> port %d after %s, %d bytes in, %d out (%s)", c.Name, port, time.Since(start).Round(time.Second), got, sent, why)
 }
 
 func (a *Local) receiveFile(s *session.Session, c keys.Contact) {

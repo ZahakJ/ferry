@@ -29,11 +29,6 @@ type Config struct {
 	// Port fixes the UDP port connections use, for forwarding on a router;
 	// 0 picks a free port per connection.
 	Port int `json:"port,omitempty"`
-	// NoBoxPorts turns off ferry shell's sharing of a lent box's ports.
-	NoBoxPorts bool `json:"no_box_ports,omitempty"`
-	// NoBoxInternet turns off ferry shell's carrying of a lent box's web
-	// traffic (to public addresses only) through this machine.
-	NoBoxInternet bool `json:"no_box_internet,omitempty"`
 
 	// Not saved: test and debug switches.
 	Loopback bool `json:"-"`

@@ -63,7 +63,6 @@ type request struct {
 	Path    string          `json:"path,omitempty"`
 	Timeout time.Duration   `json:"timeout,omitempty"`
 	Extra   json.RawMessage `json:"extra,omitempty"`
-	Want    string          `json:"want,omitempty"` // pipe: pipe | mine-ssh
 	Port    int             `json:"port,omitempty"` // pipe: the port there
 }
 
@@ -200,17 +199,7 @@ func handle(ctx context.Context, a API, c *net.UnixConn) {
 	case "files":
 		res, err = a.Files(rctx, req.Since)
 	default:
-		var fn func(context.Context, json.RawMessage) (any, error)
-		if l, ok := a.(*Local); ok {
-			l.mu.Lock()
-			fn = l.ipc[req.Op]
-			l.mu.Unlock()
-		}
-		if fn == nil {
-			err = fmt.Errorf("unknown request %q", req.Op)
-			break
-		}
-		res, err = fn(rctx, req.Extra)
+		err = fmt.Errorf("unknown request %q", req.Op)
 	}
 	if err != nil {
 		enc.Encode(response{Error: err.Error(), Kind: kindOf(err)})
@@ -230,10 +219,6 @@ func (a *Local) ipcPipe(ctx context.Context, c *net.UnixConn, enc *json.Encoder,
 		fail(err)
 		return
 	}
-	want := req.Want
-	if want != "mine-ssh" {
-		want = "pipe"
-	}
 	ep, err := a.online(ctx)
 	if err != nil {
 		fail(err)
@@ -250,7 +235,7 @@ func (a *Local) ipcPipe(ctx context.Context, c *net.UnixConn, enc *json.Encoder,
 		return
 	}
 	defer s.Close()
-	if err := s.Conn.SendJSON(session.Intent{Want: want, Port: req.Port}); err != nil {
+	if err := s.Conn.SendJSON(session.Intent{Want: "pipe", Port: req.Port}); err != nil {
 		fail(err)
 		return
 	}
@@ -280,17 +265,17 @@ func (a *Local) ipcPipe(ctx context.Context, c *net.UnixConn, enc *json.Encoder,
 // ErrNoAgentPipe means the running agent is too old to carry pipes.
 var ErrNoAgentPipe = errors.New("the running ferry up does not carry pipes")
 
-// Pipe connects in and out to a port on a contact's localhost (want
-// "pipe") or to its mesh sshd (want "mine-ssh") through the background
-// agent. It returns once both directions are done.
-func Pipe(ctx context.Context, to, want string, port int, in io.Reader, out io.Writer, closeOut func()) error {
+// Pipe connects in and out to a port on a contact's localhost through the
+// background agent (port 0: the one port the contact serves). It returns
+// once both directions are done.
+func Pipe(ctx context.Context, to string, port int, in io.Reader, out io.Writer, closeOut func()) error {
 	c, err := dialAgent(ctx)
 	if err != nil {
 		return fmt.Errorf("background agent: %w", err)
 	}
 	uc := c.(*net.UnixConn)
 	defer uc.Close()
-	if err := json.NewEncoder(uc).Encode(request{Op: "pipe", To: to, Want: want, Port: port}); err != nil {
+	if err := json.NewEncoder(uc).Encode(request{Op: "pipe", To: to, Port: port}); err != nil {
 		return err
 	}
 	br := bufio.NewReader(uc)
@@ -326,15 +311,6 @@ func Pipe(ctx context.Context, to, want string, port int, in io.Reader, out io.W
 	case <-ctx.Done():
 		return ctx.Err()
 	}
-}
-
-// Call makes an extra request (see HandleIPC) of the background agent.
-func Call(ctx context.Context, op string, extra any, out any) error {
-	b, err := json.Marshal(extra)
-	if err != nil {
-		return err
-	}
-	return (&Remote{}).call(ctx, request{Op: op, Extra: b}, out, nil)
 }
 
 // Remote is a client for a background agent.

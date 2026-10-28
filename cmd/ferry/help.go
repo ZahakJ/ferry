@@ -67,81 +67,14 @@ Delivered live if they are online, otherwise left in their mailbox.`,
   ferry wait --from sam --timeout 10m
 Exits 0 with the message, or 5 on timeout. --since <n> also returns a
 message that arrived after cursor n but before you started waiting.`,
-	"join": `
-  ferry join 44-stray-stick-judge
-Use a machine someone lends you (a box). Pairs and adds Host <box> to
-~/.ssh/config. The box can't reach this machine: you reach into it. The
-only thing that comes back is its web traffic while ferry shell is open,
-to public internet addresses only, through a proxy here that refuses
-anything local or private (--no-internet, or ferry config box-internet
-off: never). ferry leave <box> removes all of it.`,
-	"shell": `
-  ferry shell zman-box
-Mounts the box's copy of your home at ~/<box> (needs sshfs), then ssh into
-the box. While it is open, a server you start in the box (npm run dev on
-:3000) is http://localhost:3000 here too, on 127.0.0.1 only; if 3000 is
-taken here it gets the next free port, and the box's tmux says which.
-ferry ports <box> lists them. --no-ports, or ferry config box-ports off,
-turns that off. The box's web traffic goes out through this machine
-(public addresses only) unless --no-internet.`,
-	"bring": `
-  cd ~/proj && ferry bring
-  ferry bring ~/proj
-Copies a folder inside your home into the box at the same path (so
-/home/you/proj is /home/you/proj there too), with your Claude sessions for
-it (claude --resume works there) and your ~/.claude/CLAUDE.md. Leaves out
-secret-looking files (.env*, *.pem, id_*, .ssh/, .aws/, .gnupg/, .netrc,
-credentials*.json, .git-credentials; --include-secrets brings them) and
-node_modules, .venv, __pycache__, target (--all brings them). Run it again
-to update; a file that is newer in the box is kept and listed. The lender
-can see everything you bring.`,
-	"take": `
-  cd ~/proj && ferry take
-Copies that folder and its Claude sessions back from the box to the same
-path here. A file that is newer here is kept and listed; nothing outside
-the folder is written, nothing through a symlink, and never git's config
-or hooks (from the box they could run commands here). What you take comes
-from the lender's machine: review it like any change from someone else.`,
-	"ports": `
-  ferry ports zman-box
-Lists the box's ports ferry shell is sharing to 127.0.0.1 here.`,
-	"leave": `
-  ferry leave zman-box
-Unmounts, closes your sessions to the box, removes its ssh config block
-(and anything an older ferry set up for the box to reach this machine),
-and forgets the pairing. Folders you took home stay.`,
 	"pipe": `
   ssh -o ProxyCommand='ferry pipe box 2222' friend@box
 Connects stdin and stdout to a port on a paired contact's localhost, over
 the direct link (never a relay). The other side must run
 ferry up --allow-pipe 2222; every other port, and anyone not paired, is
-refused and logged there.`,
-	"mine": `
-  ferry mine add                  on one device: prints a code
-  ferry mine join <code>          on the other; both confirm the two check words
-  ferry mine                      your devices: online, path, CPU/RAM/GPU, mounts
-  ferry mine res                  all of them added up
-  ferry mine rm <device>          take a device out (both ways, all devices)
-  ferry mine sync [device]        pull Claude sessions now (ferry up does it every minute)
-  ferry mine ports <device>       what listens there
-  ferry mine fwd <device> <port>  put it on 127.0.0.1 here (--stop ends it)
-  ferry mine fallback on|off      a command missing here runs where it exists
-  ferry mine service              start ferry up at login (systemd / launchd)
-Your own devices, linked, are one machine: each device's home is at
-~/m/<device> while it is reachable, on <device> <cmd> runs there, and
-claude --resume lists the sessions of all of them. They get FULL access to
-each other (ssh as you), so one compromised device reaches all. A plain
-contact (ferry pair) never gets any of it. Joining a third device from
-either one links it with all. Each device needs ferry up running
-(ferry mine service). --system-sshd uses the system sshd instead of
-ferry's private one on 127.0.0.1.`,
-	"on": `
-  on laptop make test             run there; stdin/stdout/exit code pass through
-  on gpu python train.py          on a reachable device with an NVIDIA GPU
-  on laptop                       a login shell there
-In your home (or in ~/m/<device>), the command runs in the same folder
-there, relative to the home: /home/you/x here is /Users/you/x on a Mac.
-ferry mine add/join installs on as ~/.local/bin/on; ferry on is the same.`,
+refused and logged there. With no port, ferry pipe uses the one port the
+other side allows, if it allows exactly one. With ferry up running here,
+the pipe goes through it.`,
 	"up": `
 Stays online so contacts can reach this machine: messages are kept for
 ferry inbox, files land in the files folder (ferry files). ferry up --unit
@@ -213,9 +146,8 @@ OTHER
   ferry contacts --json          {"event":"contacts","contacts":[{"name":...}]}
   ferry check                    is the rendezvous reachable? STUN? the port?
   ferry up                       stay online so contacts can reach you
-  ferry mine / on <dev> <cmd>    your own devices as one machine (ferry help mine)
   ferry mcp                      the same as MCP tools over stdio
-  ferry config [key value]       name, rendezvous, lanes, port, box-ports, box-internet
+  ferry config [key value]       name, rendezvous, lanes, port
 `
 
 // reference prints the CLI reference as Markdown, from the command table,

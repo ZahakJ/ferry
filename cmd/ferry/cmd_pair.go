@@ -93,11 +93,7 @@ func cmdContacts(ctx context.Context, o *out, args []string) error {
 	var list []map[string]any
 	for _, n := range cs.Names() {
 		c := cs[n]
-		kind := "friend"
-		if c.Mine() {
-			kind = "mine"
-		}
-		list = append(list, map[string]any{"name": n, "id": c.Key.ID(), "paired": c.Paired, "kind": kind})
+		list = append(list, map[string]any{"name": n, "id": c.Key.ID(), "paired": c.Paired})
 	}
 	if o.json {
 		o.event("contacts", map[string]any{"contacts": list})
@@ -109,11 +105,7 @@ func cmdContacts(ctx context.Context, o *out, args []string) error {
 	}
 	for _, n := range cs.Names() {
 		c := cs[n]
-		kind := ""
-		if c.Mine() {
-			kind = "  your own device (ferry mine)"
-		}
-		o.result("%-16s %s  paired %s%s", n, o.dim(c.Key.ID()), c.Paired.Local().Format("2006-01-02"), kind)
+		o.result("%-16s %s  paired %s", n, o.dim(c.Key.ID()), c.Paired.Local().Format("2006-01-02"))
 	}
 	return nil
 }
@@ -133,9 +125,6 @@ func cmdForget(ctx context.Context, o *out, args []string) error {
 	if _, ok := cs[args[0]]; !ok {
 		_, err := findContact(args[0])
 		return err
-	}
-	if cs[args[0]].Mine() {
-		return usagef("%s is one of your own devices; ferry mine rm %s removes it everywhere and cleans up", args[0], args[0])
 	}
 	delete(cs, args[0])
 	if err := cs.Save(); err != nil {
@@ -161,7 +150,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		if id != nil {
 			name = id.Name
 		}
-		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "box_ports": !cfg.NoBoxPorts, "box_internet": !cfg.NoBoxInternet, "dir": keys.Dir()})
+		o.event("config", map[string]any{"name": name, "rendezvous": cfg.Rendezvous, "lanes": cfg.Lanes, "port": cfg.Port, "dir": keys.Dir()})
 		o.result("name             %s", name)
 		o.result("rendezvous       %s", cfg.Rendezvous)
 		lanes := "by size (2-16)"
@@ -174,16 +163,6 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 			port = fmt.Sprintf("udp %d", cfg.Port)
 		}
 		o.result("port             %s", port)
-		boxPorts := "on (ferry shell shares a lent box's ports to localhost here)"
-		if cfg.NoBoxPorts {
-			boxPorts = "off"
-		}
-		o.result("box-ports        %s", boxPorts)
-		boxNet := "on (while ferry shell is open, a lent box's web traffic goes out through this machine, public addresses only)"
-		if cfg.NoBoxInternet {
-			boxNet = "off"
-		}
-		o.result("box-internet     %s", boxNet)
 		o.result("%s", o.dim("stored in "+keys.Dir()))
 	}
 	switch len(args) {
@@ -192,7 +171,7 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 		return nil
 	case 2:
 	default:
-		return usagef("usage: ferry config [name|rendezvous|lanes|port|box-ports|box-internet <value>]")
+		return usagef("usage: ferry config [name|rendezvous|lanes|port <value>]")
 	}
 	k, v := args[0], args[1]
 	// Edit the file as written, without environment overrides.
@@ -229,26 +208,8 @@ func cmdConfig(ctx context.Context, o *out, args []string) error {
 			return usagef("port is a UDP port number, or 0 for any")
 		}
 		cfg.Port = n
-	case "box-ports":
-		switch v {
-		case "on":
-			cfg.NoBoxPorts = false
-		case "off":
-			cfg.NoBoxPorts = true
-		default:
-			return usagef("box-ports is on or off")
-		}
-	case "box-internet":
-		switch v {
-		case "on":
-			cfg.NoBoxInternet = false
-		case "off":
-			cfg.NoBoxInternet = true
-		default:
-			return usagef("box-internet is on or off")
-		}
 	default:
-		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port, box-ports, box-internet", k)
+		return usagef("unknown setting %q; settings are name, rendezvous, lanes, port", k)
 	}
 	if err := cfg.Save(); err != nil {
 		return err

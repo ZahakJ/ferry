@@ -9,83 +9,31 @@ exit codes are part of the public interface.
 
 ### Added
 
-- `ferry mine`: your own devices as one machine. `ferry mine add` on one
-  device and `ferry mine join <code>` on another link them (both screens
-  show two words, both must confirm); a third linked to either is
-  introduced to all. Each device's home is mounted at `~/m/<device>` while
-  it is reachable (and remounted after a drop), `on <device> <cmd>` runs a
-  command there in the same folder (home-relative, so `/home/you/x` is
-  `/Users/you/x` on a Mac) with stdin, output and exit code passed
-  through, `on gpu <cmd>` picks a device with an NVIDIA GPU, and
-  `claude --resume` lists the Claude sessions of all of them (pulled every
-  minute, append-only, never deleting; diverged sessions kept as
-  `<id>.ferry-<device>.jsonl`). `ferry mine` and `ferry mine res` show the
-  devices and their resources (`--json`); `ferry mine ports`/`fwd` list
-  and forward their ports; `ferry mine fallback on` runs a missing command
-  where it exists; `ferry mine service` installs a systemd user unit or a
-  launchd agent; `ferry mine rm` removes a device everywhere. Your devices
-  get full mutual access through a private, key-only sshd on each one's
-  127.0.0.1; plain contacts never do.
-- `ferry on`, also installed as `~/.local/bin/on`.
-- `ferry contacts` shows which contacts are your own devices.
-
-- `ferry join <code>` uses a machine someone lends you (a "box"): it pairs
-  and adds `Host <box>` to `~/.ssh/config`. It is a one-way mirror: your
-  machine reaches into the box and the box has no way back into yours.
-  `ferry shell <box>` mounts the box's copy of your home at `~/<box>` and
-  logs in. `ferry leave <box>` closes the sessions, unmounts, and removes
-  the ssh config block, the box's host key and the pairing.
-- `ferry bring [folder]` copies a folder inside your home into the box at
-  the same path, with your Claude sessions for it (so `claude --resume`
-  works there), your `~/.claude/CLAUDE.md` and your git name and email. It
-  leaves out secret-looking files (`--include-secrets`) and
-  `node_modules`/`.venv`/`__pycache__`/`target` (`--all`), sends only what
-  changed, and keeps files that are newer in the box. `ferry take [folder]`
-  copies it and its sessions back, never over a newer file here, never
-  outside the folder or through a symlink, and never git's config or hooks.
-- While `ferry shell` is open, the box's web traffic can go out through
-  your connection: the box's `127.0.0.1:1080` is a SOCKS5 proxy on your
-  machine that only connects to public internet addresses (it resolves
-  names itself and dials the checked address). `--no-internet` or
-  `ferry config box-internet off` turns it off.
-- `ferry pipe <contact>` with no port uses the one port the other side serves.
-- `ferry shell <box>` shares the box's ports: a server started in the box
-  (`npm run dev` on :3000) is http://localhost:3000 on your machine while
-  the shell is open, on 127.0.0.1 only, or on the next free port if that one
-  is taken (the box's tmux says which). `ferry ports <box>` lists them;
-  `ferry shell --no-ports` or `ferry config box-ports off` turns it off.
-  The shells to a box share one ssh connection; the last one to close ends
-  it, so closing the terminal, or `ferry leave`, leaves nothing running.
-
-### Security
-
-- Boxes can no longer reach back into the borrower's machine. Earlier
-  builds of `ferry join` (unreleased) ran a private sshd that the box's key
-  opened, through a reverse tunnel in your ssh session, plus a dynamic
-  SOCKS tunnel that also reached your localhost and LAN; the box's lender
-  could read your home and run commands as you while you were connected.
-  `ferry join` and `ferry shell` now remove that state when they find it.
-
-### Fixed
-
-- With `ferry up` running, `ferry pipe` (and so ssh through it) goes through
-  it instead of joining the rendezvous a second time under the same
-  identity, where incoming sessions could reach the wrong process.
-- A running `ferry up` that lost the rendezvous (an outage or a restart)
-  stayed unreachable until restarted. It now reconnects within 15 s; the
-  harness restarts the rendezvous to check.
-
 - `ferry pipe <contact> <port>` connects stdin/stdout to a TCP port on a
   paired contact's localhost over the direct link, so ssh works with no
   open ports: `ssh -o ProxyCommand='ferry pipe box 22' me@box`.
 - `ferry up --allow-pipe <port>[,<port>]` serves pipes only to the listed
   localhost ports and only to paired contacts (none by default); every
   pipe opened or refused, and every stranger turned away, is logged.
+- `ferry pipe <contact>` with no port uses the one port the other side serves.
+- With `ferry up` running, `ferry pipe` goes through it instead of joining
+  the rendezvous a second time under the same identity.
 
 ### Changed
 
 - The rendezvous in `deploy/fly` caps every relayed circuit at 1 MiB and
   2 minutes (Concord v0.59.1): it carries signaling only, never data.
+- Lending a machine (`join`, `shell`, `bring`, `take`, `ports`, `leave`)
+  and linking your own devices (`mine`, `on`) were on main briefly and now
+  live on the branch `zyads/lend-and-mine`: they run commands and share
+  homes across machines, which ferry, made to move files and messages,
+  does not do.
+
+### Fixed
+
+- A running `ferry up` that lost the rendezvous (an outage or a restart)
+  stayed unreachable until restarted. It now reconnects within 15 s; the
+  harness restarts the rendezvous to check.
 
 ## [0.1.0] - 2026-10-22
 

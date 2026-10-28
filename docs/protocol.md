@@ -72,7 +72,7 @@ ID:
 |---|---|
 | `msg` | a stream of signed messages, each acknowledged `{"id","ok"}` |
 | `files` | a link, then a transfer |
-| `pipe` | `{"want":"pipe","port":N}`; only if N is in the other side's `--allow-pipe` list, a link, then one byte stream on its control channel to 127.0.0.1:N. Messages are `d`+data or `e` (no more data from this side) |
+| `pipe` | `{"want":"pipe","port":N}` (no port: the one port the other side allows, if exactly one); only if N is in the other side's `--allow-pipe` list, a link, then one byte stream on its control channel to 127.0.0.1:N. Messages are `d`+data or `e` (no more data from this side) |
 
 New kinds of work are new `want` values. A side that does not know one
 declines with a reason; nothing else changes.

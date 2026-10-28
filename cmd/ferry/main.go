@@ -39,15 +39,7 @@ func init() {
 		{"inbox", "[--since n] [--from contact]", "show messages", cmdInbox},
 		{"wait", "[--from contact] [--timeout 10m]", "wait for the next message", cmdWait},
 		{"files", "", "list files contacts have sent to this machine", cmdFiles},
-		{"join", "[--no-internet] <code>", "use a machine someone lends you: pair and add it to your ssh config", cmdJoin},
-		{"shell", "[--no-ports] [--no-internet] <box>", "open the lent box (its files at ~/<box>, its ports on localhost, then ssh)", cmdShell},
-		{"bring", "[--box b] [folder]", "copy a folder (and its Claude sessions) into the box, at the same path", cmdBring},
-		{"take", "[--box b] [folder]", "copy that folder (and its Claude sessions) back from the box", cmdTake},
-		{"ports", "<box>", "list the box's ports ferry shell is sharing to localhost here", cmdPorts},
-		{"leave", "<box>", "undo ferry join: unmount, close sessions, remove the ssh config, forget the box", cmdLeave},
 		{"pipe", "<contact> [port]", "connect stdin/stdout to a port on a contact's localhost (ssh ProxyCommand)", cmdPipe},
-		{"mine", "[add|join|rm|res|sync|ports|fwd|fallback|service]", "make all your own devices one machine (ferry help mine)", cmdMine},
-		{"on", "<device|gpu> [command…]", "run a command on one of your own devices, in the same folder", cmdOn},
 		{"up", "[--unit] [--allow-pipe ports]", "stay online in the background so contacts can reach you", cmdUp},
 		{"check", "", "test the connection to the rendezvous and STUN, and explain the results", cmdCheck},
 		{"mcp", "", "serve ferry as MCP tools on stdio (for Claude Code and other agents)", cmdMCP},
@@ -66,11 +58,7 @@ func main() {
 func run(argv []string) int {
 	jsonMode := false
 	var args []string
-	for i, a := range argv {
-		if len(args) == 1 && args[0] == "on" {
-			args = append(args, argv[i:]...) // the rest is a command for the other device, flags and all
-			break
-		}
+	for _, a := range argv {
 		if a == "--json" || a == "-json" {
 			jsonMode = true
 			continue
