@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"golang.org/x/term"
+
+	"github.com/ZahakJ/ferry/internal/xfer"
 )
 
 // Exit codes. They are part of the interface; see `ferry help exit-codes`.
@@ -100,12 +102,16 @@ type progress struct {
 	label   string
 	total   int64
 	start   time.Time
-	last    time.Time
+	last    time.Time // when a line last went out
 	samples []sample
 	done    int64
 	base    int64 // already there when the transfer started (a resume)
 	seen    bool
 	ended   bool
+	moved   time.Time // when done last went up
+	what    string    // the phase, until bytes flow
+	whatAt  time.Time
+	stop    chan struct{}
 }
 
 type sample struct {
@@ -113,8 +119,48 @@ type sample struct {
 	n int64
 }
 
+// stillAfter is how long bytes, or a wait, must stand still before the
+// line says so. Until then a pause is ordinary.
+const stillAfter = 10 * time.Second
+
 func (o *out) progress(label string, total int64) *progress {
-	return &progress{o: o, label: label, total: total, start: time.Now()}
+	p := &progress{o: o, label: label, total: total, start: time.Now(), stop: make(chan struct{})}
+	go p.heartbeat()
+	return p
+}
+
+// heartbeat speaks up when nothing else does: a transfer whose bytes
+// stopped, or a wait that drags on, still prints, so a pause is never
+// mistaken for work and work is never mistaken for a hang.
+func (p *progress) heartbeat() {
+	t := time.NewTicker(time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-p.stop:
+			return
+		case now := <-t.C:
+			p.o.mu.Lock()
+			switch {
+			case p.ended:
+			case p.seen && now.Sub(p.moved) >= stillAfter && now.Sub(p.last) >= p.every(time.Second):
+				p.draw(now)
+			case !p.seen && p.what != "" && now.Sub(p.whatAt) >= stillAfter && now.Sub(p.last) >= p.every(time.Second):
+				p.last = now
+				p.say(fmt.Sprintf("%s… (%s)", upper(p.what), human(now.Sub(p.whatAt))))
+			}
+			p.o.mu.Unlock()
+		}
+	}
+}
+
+// every is how often lines may go out: a terminal redraws in place, a
+// log gets a line now and then.
+func (p *progress) every(tty time.Duration) time.Duration {
+	if p.o.tty {
+		return tty
+	}
+	return 5 * time.Second
 }
 
 // rate is bytes/s over the last few seconds, which reacts to change
@@ -140,21 +186,32 @@ func (p *progress) update(done, total int64) {
 	}
 	if !p.seen {
 		p.seen, p.base = true, done
+		// The rate counts from the first report, not from connecting.
+		p.start, p.moved, p.last = now, now, time.Time{}
+	}
+	if done > p.done {
+		p.moved = now
 	}
 	p.done, p.total = done, total
 	p.samples = append(p.samples, sample{now, done})
 	for len(p.samples) > 2 && now.Sub(p.samples[0].t) > 5*time.Second {
 		p.samples = p.samples[1:]
 	}
-	interval := 100 * time.Millisecond
-	if !p.o.tty {
-		interval = 5 * time.Second
-	}
-	if now.Sub(p.last) < interval && done < total {
+	if now.Sub(p.last) < p.every(100*time.Millisecond) && done < total {
 		return
 	}
+	p.draw(now)
+}
+
+// draw prints the progress line. The caller holds the lock.
+func (p *progress) draw(now time.Time) {
 	p.last = now
+	done, total := p.done, p.total
 	r := p.rate()
+	still := now.Sub(p.moved)
+	if still >= stillAfter {
+		r = 0
+	}
 	if p.o.json {
 		b, _ := json.Marshal(map[string]any{"event": "progress", "bytes": done, "total": total, "rate": int64(r)})
 		os.Stderr.Write(append(b, '\n'))
@@ -172,6 +229,10 @@ func (p *progress) update(done, total int64) {
 	if r > 0 {
 		speed = "  " + size(int64(r)) + "/s"
 	}
+	// Nothing moving is said outright, not left to a frozen bar.
+	if done < total && still >= stillAfter {
+		eta = " · nothing moved for " + human(still)
+	}
 	line := fmt.Sprintf("%s %5.1f%%  %s of %s%s%s", p.label, pct, size(done), size(total), speed, eta)
 	if !p.o.tty {
 		fmt.Fprintln(os.Stderr, line)
@@ -183,8 +244,53 @@ func (p *progress) update(done, total int64) {
 	fmt.Fprintf(os.Stderr, "\r\033[K%s %s", bar, line)
 }
 
+// status shows what the transfer is doing before bytes flow, so a wait is
+// never silent: "waiting for sam to accept…". Once bytes flow, the
+// progress line takes over.
+func (p *progress) status(what string) {
+	p.o.mu.Lock()
+	defer p.o.mu.Unlock()
+	if p.ended || what == p.what {
+		return
+	}
+	p.what, p.whatAt = what, time.Now()
+	if p.o.json {
+		b, _ := json.Marshal(map[string]any{"event": "status", "status": what})
+		os.Stderr.Write(append(b, '\n'))
+		return
+	}
+	if what == xfer.StatusSending && p.seen {
+		return
+	}
+	p.say(upper(what) + "…")
+}
+
+// say shows one status line. The caller holds the lock.
+func (p *progress) say(line string) {
+	if p.o.json {
+		b, _ := json.Marshal(map[string]any{"event": "status", "status": p.what, "waited": int(time.Since(p.whatAt).Seconds())})
+		os.Stderr.Write(append(b, '\n'))
+		return
+	}
+	if p.o.tty {
+		fmt.Fprintf(os.Stderr, "\r\033[K%s", p.o.dim(line))
+		return
+	}
+	fmt.Fprintln(os.Stderr, line)
+}
+
+func upper(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
+}
+
 func (p *progress) end() {
 	p.o.mu.Lock()
+	if !p.ended {
+		close(p.stop)
+	}
 	p.ended = true
 	p.o.mu.Unlock()
 	if p.o.tty && !p.o.json {

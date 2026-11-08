@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"syscall"
@@ -68,6 +69,7 @@ type request struct {
 
 type response struct {
 	Progress *[2]int64 `json:"progress,omitempty"`
+	Status   string    `json:"status,omitempty"`
 	OK       bool      `json:"ok"`
 	Result   any       `json:"result,omitempty"`
 	Error    string    `json:"error,omitempty"`
@@ -87,6 +89,7 @@ var kinds = map[string]error{
 	"no_room":         xfer.ErrNoRoom,
 	"no_path":         link.ErrNoPath,
 	"turned_away":     ErrTurnedAway,
+	"stalled":         xfer.ErrStalled,
 }
 
 // ErrTurnedAway means a contact refused this machine at the handshake.
@@ -165,6 +168,9 @@ func handle(ctx context.Context, a API, c *net.UnixConn) {
 		}
 		return
 	}
+	// Callbacks run on several goroutines, and may still run as the
+	// result goes out; one line at a time.
+	var mu sync.Mutex
 	// A request ends when the client hangs up, so a cancelled `ferry wait`
 	// does not leave work running here.
 	rctx, cancel := context.WithCancel(ctx)
@@ -194,13 +200,21 @@ func handle(ctx context.Context, a API, c *net.UnixConn) {
 	case "send_file":
 		res, err = a.SendFile(rctx, req.To, req.Path, func(done, total int64) {
 			p := [2]int64{done, total}
+			mu.Lock()
 			enc.Encode(response{Progress: &p})
+			mu.Unlock()
+		}, func(what string) {
+			mu.Lock()
+			enc.Encode(response{Status: what})
+			mu.Unlock()
 		})
 	case "files":
 		res, err = a.Files(rctx, req.Since)
 	default:
 		err = fmt.Errorf("unknown request %q", req.Op)
 	}
+	mu.Lock()
+	defer mu.Unlock()
 	if err != nil {
 		enc.Encode(response{Error: err.Error(), Kind: kindOf(err)})
 		return
@@ -336,7 +350,7 @@ func Open(cfg *session.Config) (API, error) {
 	return NewLocal(cfg)
 }
 
-func (r *Remote) call(ctx context.Context, req request, out any, progress xfer.Progress) error {
+func (r *Remote) call(ctx context.Context, req request, out any, progress xfer.Progress, status xfer.Status) error {
 	c, err := dialAgent(ctx)
 	if err != nil {
 		return fmt.Errorf("background agent: %w", err)
@@ -351,6 +365,7 @@ func (r *Remote) call(ctx context.Context, req request, out any, progress xfer.P
 	for sc.Scan() {
 		var resp struct {
 			Progress *[2]int64       `json:"progress"`
+			Status   string          `json:"status"`
 			OK       bool            `json:"ok"`
 			Result   json.RawMessage `json:"result"`
 			Error    string          `json:"error"`
@@ -362,6 +377,12 @@ func (r *Remote) call(ctx context.Context, req request, out any, progress xfer.P
 		if resp.Progress != nil {
 			if progress != nil {
 				progress(resp.Progress[0], resp.Progress[1])
+			}
+			continue
+		}
+		if resp.Status != "" {
+			if status != nil {
+				status(resp.Status)
 			}
 			continue
 		}
@@ -381,44 +402,44 @@ func (r *Remote) call(ctx context.Context, req request, out any, progress xfer.P
 
 func (r *Remote) Status(ctx context.Context) (*Status, error) {
 	var s Status
-	return &s, r.call(ctx, request{Op: "status"}, &s, nil)
+	return &s, r.call(ctx, request{Op: "status"}, &s, nil, nil)
 }
 
 func (r *Remote) Contacts(ctx context.Context) ([]Contact, error) {
 	var cs []Contact
-	return cs, r.call(ctx, request{Op: "contacts"}, &cs, nil)
+	return cs, r.call(ctx, request{Op: "contacts"}, &cs, nil, nil)
 }
 
 func (r *Remote) Send(ctx context.Context, req SendRequest) (*SendResult, error) {
 	var s SendResult
-	return &s, r.call(ctx, request{Op: "send", Send: &req}, &s, nil)
+	return &s, r.call(ctx, request{Op: "send", Send: &req}, &s, nil, nil)
 }
 
 func (r *Remote) Inbox(ctx context.Context, since int64, from string) (*InboxResult, error) {
 	var res InboxResult
-	return &res, r.call(ctx, request{Op: "inbox", Since: since, From: from}, &res, nil)
+	return &res, r.call(ctx, request{Op: "inbox", Since: since, From: from}, &res, nil, nil)
 }
 
 func (r *Remote) Wait(ctx context.Context, from string, since int64, timeout time.Duration) (*msg.Record, error) {
 	var rec msg.Record
-	if err := r.call(ctx, request{Op: "wait", From: from, Since: since, Timeout: timeout}, &rec, nil); err != nil {
+	if err := r.call(ctx, request{Op: "wait", From: from, Since: since, Timeout: timeout}, &rec, nil, nil); err != nil {
 		return nil, err
 	}
 	return &rec, nil
 }
 
-func (r *Remote) SendFile(ctx context.Context, to, path string, progress xfer.Progress) (*FileResult, error) {
+func (r *Remote) SendFile(ctx context.Context, to, path string, progress xfer.Progress, status xfer.Status) (*FileResult, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
 	var res FileResult
-	return &res, r.call(ctx, request{Op: "send_file", To: to, Path: abs}, &res, progress)
+	return &res, r.call(ctx, request{Op: "send_file", To: to, Path: abs}, &res, progress, status)
 }
 
 func (r *Remote) Files(ctx context.Context, since int64) ([]Received, error) {
 	var fs []Received
-	return fs, r.call(ctx, request{Op: "files", Since: since}, &fs, nil)
+	return fs, r.call(ctx, request{Op: "files", Since: since}, &fs, nil, nil)
 }
 
 func (r *Remote) Close() error { return nil }

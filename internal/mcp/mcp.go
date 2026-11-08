@@ -18,6 +18,7 @@ import (
 	"github.com/ZahakJ/ferry/internal/agent"
 	"github.com/ZahakJ/ferry/internal/link"
 	"github.com/ZahakJ/ferry/internal/session"
+	"github.com/ZahakJ/ferry/internal/xfer"
 )
 
 // Instructions are sent to the client once, at initialization.
@@ -162,6 +163,8 @@ func errText(err error) string {
 		kind = "unknown_contact"
 	case errors.Is(err, session.ErrNoRendezvous):
 		kind = "no_rendezvous"
+	case errors.Is(err, xfer.ErrStalled):
+		return "stalled: " + err.Error() + ". What arrived is kept; sending the same path again resumes from there."
 	case errors.Is(err, link.ErrNoPath):
 		return "no_path: the two machines cannot connect directly; their networks block it. ferry never relays data. The user can try another network, forward a UDP port (ferry config port 40000), or use a VPN or tailnet."
 	}
@@ -235,7 +238,7 @@ func (s *Server) run(ctx context.Context, name string, raw json.RawMessage) (any
 		if a.To == "" || a.Path == "" {
 			return nil, errors.New("send_file needs `to` and `path`")
 		}
-		return s.A.SendFile(ctx, a.To, a.Path, nil)
+		return s.A.SendFile(ctx, a.To, a.Path, nil, nil)
 	case "list_files_received":
 		var a struct {
 			Since int64 `json:"since"`

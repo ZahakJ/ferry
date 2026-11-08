@@ -130,7 +130,10 @@ func (b bitmap) count(n int) int {
 
 // Send offers root (a file or directory) over l and streams it.
 // It returns once the receiver confirms every file arrived intact.
-func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress Progress) (saved string, err error) {
+// status, if set, hears each change of phase. If nothing moves for
+// StallAfter, Send stops and returns an error wrapping ErrStalled that
+// says what it was waiting on.
+func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress Progress, status Status) (saved string, err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	// A transfer that fails leaves the link unusable; closing it unblocks
@@ -142,6 +145,19 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 			l.Close()
 		}
 	}()
+	stallAfter, wait := StallAfter, acceptWait()
+	// Why the watchdog stopped the transfer, if it did.
+	var stalled atomic.Pointer[string]
+	stop := func(why string) {
+		stalled.CompareAndSwap(nil, &why)
+		cancel()
+	}
+	defer func() {
+		if why := stalled.Load(); why != nil && err != nil {
+			err = fmt.Errorf("%w: %s", ErrStalled, *why)
+		}
+	}()
+
 	if err := l.SendCtl(ctl{T: "offer", ID: m.ID(), Name: m.Name, Total: m.Total, NFiles: len(m.Files), Skipped: m.Skipped}); err != nil {
 		return "", err
 	}
@@ -158,9 +174,28 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 		}
 		start = end
 	}
-	reply, err := readCtl(l)
-	if err != nil {
-		return "", err
+	status.say(StatusAccept)
+	type answer struct {
+		c   ctl
+		err error
+	}
+	answered := make(chan answer, 1)
+	go func() {
+		c, err := readCtl(l)
+		answered <- answer{c, err}
+	}()
+	var reply ctl
+	select {
+	case a := <-answered:
+		if a.err != nil {
+			return "", a.err
+		}
+		reply = a.c
+	case <-time.After(wait):
+		stop(fmt.Sprintf("the receiver has not answered the offer in %s", round(wait)))
+		return "", ctx.Err()
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
 	switch reply.T {
 	case "accept":
@@ -183,9 +218,20 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 			return "", err
 		}
 	}
+	status.say(StatusSending)
+
+	// Signs of life, for the watchdog: any word from the receiver; bytes
+	// it holds going up; and our own disk reads of pieces it already
+	// has, which move nothing over the wire while a resume catches up.
+	heard, moved, hashed := newClock(), newClock(), newClock()
+	var held atomic.Int64
+	held.Store(-1)
+	// Where the reader is, so a stall can be blamed on the right side.
+	var reading atomic.Pointer[string]
 
 	// Control replies arrive while we stream.
 	final := make(chan ctl, 1)
+	var answeredFinal atomic.Bool
 	ctlErr := make(chan error, 1)
 	go func() {
 		for {
@@ -195,15 +241,47 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 				cancel()
 				return
 			}
+			heard.mark()
 			switch r.T {
 			case "progress":
+				if r.Bytes > held.Swap(r.Bytes) {
+					moved.mark()
+				}
 				if progress != nil {
 					progress(r.Bytes, m.Total)
 				}
 			case "complete", "cancel":
 				// Let the receiver know it may hang up.
 				l.SendCtl(ctl{T: "bye"})
+				answeredFinal.Store(true)
 				final <- r
+				return
+			}
+		}
+	}()
+
+	go func() {
+		t := time.NewTicker(max(stallAfter/20, 10*time.Millisecond))
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+			}
+			if answeredFinal.Load() {
+				return
+			}
+			switch quiet := moved.newer(hashed).since(); {
+			case heard.since() > stallAfter:
+				stop(fmt.Sprintf("no word from the receiver for %s; the connection has gone quiet", round(heard.since())))
+				return
+			case held.Load() < m.Total && quiet > stallAfter:
+				if p := reading.Load(); p != nil {
+					stop(fmt.Sprintf("reading %s from disk has not returned for %s", *p, round(quiet)))
+				} else {
+					stop(fmt.Sprintf("no data has moved for %s: the receiver holds %d of %d bytes and is taking no more", round(quiet), max(held.Load(), 0), m.Total))
+				}
 				return
 			}
 		}
@@ -231,8 +309,9 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 		}()
 	}
 
-	readErr := func() error {
+	readAll := func() error {
 		defer close(pieces)
+		lastBeat := time.Now()
 		for i, f := range m.Files {
 			if f.Dir || done[i] {
 				continue
@@ -241,6 +320,7 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 			if f.Path != "" {
 				p = filepath.Join(root, filepath.FromSlash(f.Path))
 			}
+			reading.Store(&p)
 			fh, err := os.Open(p)
 			if err != nil {
 				return err
@@ -251,14 +331,22 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 				bp := pool.Get().(*[]byte)
 				buf := *bp
 				want := min(PieceSize, f.Size-int64(n)*PieceSize)
+				reading.Store(&p)
 				if _, err := io.ReadFull(fh, buf[pieceHeader:pieceHeader+want]); err != nil {
 					fh.Close()
 					return fmt.Errorf("%s changed while sending: %w", p, err)
 				}
+				reading.Store(nil)
 				data := buf[pieceHeader : pieceHeader+want]
 				whole.Write(data)
 				if hv != nil && hv.has(n) {
 					pool.Put(bp)
+					hashed.mark()
+					// Tell the receiver we are alive while nothing is sent.
+					if time.Since(lastBeat) > 2*time.Second {
+						l.SendCtl(ctl{T: "alive"})
+						lastBeat = time.Now()
+					}
 					continue
 				}
 				buf[0] = 1
@@ -277,24 +365,51 @@ func Send(ctx context.Context, l *link.Link, root string, m *Manifest, progress 
 				return err
 			}
 		}
+		reading.Store(nil)
 		return l.SendCtl(ctl{T: "end"})
-	}()
-	lanes.Wait()
-	if readErr != nil {
-		return "", readErr
 	}
+	readDone := make(chan error, 1)
+	go func() { readDone <- readAll() }()
+	// A read from a disk that never answers must not hang Send too; when
+	// the watchdog gives up, Send returns without waiting for it.
+	var readErr error
 	select {
-	case err := <-errc:
-		return "", fmt.Errorf("connection lost: %w", err)
-	default:
+	case readErr = <-readDone:
+		lanes.Wait()
+	case <-ctx.Done():
 	}
-	select {
-	case r := <-final:
+	verdict := func(r ctl) (string, error) {
 		if r.T == "cancel" || !r.OK {
 			return "", fmt.Errorf("the receiver reported a problem: %s", r.Reason)
 		}
 		ok.Store(true)
 		return r.Saved, nil
+	}
+	// The receiver's last word, if it has spoken, explains more than
+	// anything seen on this side.
+	select {
+	case r := <-final:
+		return verdict(r)
+	default:
+	}
+	select {
+	case err := <-errc:
+		return "", fmt.Errorf("connection lost, last heard from the receiver %s ago: %w", round(heard.since()), err)
+	default:
+	}
+	if readErr != nil {
+		if ctx.Err() != nil {
+			select {
+			case err := <-ctlErr:
+				return "", fmt.Errorf("connection lost, last heard from the receiver %s ago: %w", round(heard.since()), err)
+			default:
+			}
+		}
+		return "", readErr
+	}
+	select {
+	case r := <-final:
+		return verdict(r)
 	case err := <-ctlErr:
 		return "", fmt.Errorf("connection lost before the receiver confirmed: %w", err)
 	case <-ctx.Done():
@@ -723,8 +838,10 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 		}()
 	}
 
-	// Control: whole-file hashes from the sender.
+	// Control: whole-file hashes from the sender, and word that it is
+	// still there while it reads through pieces this side already has.
 	bye := make(chan struct{})
+	alive := newClock()
 	go func() {
 		for {
 			c, err := readCtl(l)
@@ -734,6 +851,7 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 				}
 				return
 			}
+			alive.mark()
 			switch c.T {
 			case "end-file":
 				if c.Idx < 0 || c.Idx >= len(files) || files[c.Idx].pieces < 0 || files[c.Idx].f.Dir {
@@ -825,6 +943,10 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	tick := time.NewTicker(250 * time.Millisecond)
 	defer tick.Stop()
 	lastCP := time.Now()
+	// The watchdog: a sender that stops sending would otherwise hold this
+	// transfer open for as long as ctx lasts. It is more patient than the
+	// sender's, which is the side a person watches and which explains why.
+	moved, lastHeld, stallAfter := newClock(), held.Load(), StallAfter
 
 	pending := 0
 	for _, rf := range files {
@@ -867,11 +989,27 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 				checkpoint()
 				lastCP = time.Now()
 			}
+			if h := held.Load(); h != lastHeld {
+				lastHeld = h
+				moved.mark()
+			}
+			if quiet := moved.newer(alive).since(); lastHeld < m.Total && quiet > 2*stallAfter {
+				checkpoint()
+				why := fmt.Sprintf("nothing has arrived for %s", round(quiet))
+				l.SendCtl(ctl{T: "cancel", Reason: why})
+				return "", fmt.Errorf("%w: %s; what arrived is kept, and the same send resumes from there", ErrStalled, why)
+			}
 		case err := <-errc:
 			checkpoint()
 			return "", err
 		case <-ctx.Done():
 			checkpoint()
+			// fail cancels too; its reason says more than "canceled".
+			select {
+			case err := <-errc:
+				return "", err
+			default:
+			}
 			return "", ctx.Err()
 		}
 	}

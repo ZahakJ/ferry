@@ -125,7 +125,7 @@ func exitCode(ctx context.Context, err error) int {
 		return exitAuth
 	case errors.Is(err, session.ErrOffline), errors.Is(err, session.ErrNobodyThere), errors.Is(err, errUnreachable), errors.Is(err, link.ErrNoPath):
 		return exitOffline
-	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, errTimeout):
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, errTimeout), errors.Is(err, xfer.ErrStalled), errors.Is(err, agent.ErrTimeout):
 		return exitTimeout
 	case errors.Is(err, errIntegrity), errors.Is(err, xfer.ErrIntegrity):
 		return exitIntegrity
@@ -162,6 +162,8 @@ func explain(err error) string {
 			"running your own is one command (see Concord's docs/RENDEZVOUS.md)."
 	case errors.Is(err, link.ErrNoPath):
 		return noPath
+	case errors.Is(err, xfer.ErrStalled):
+		return err.Error() + ".\nWhat arrived is kept: run the same command again to resume where it stopped."
 	case errors.Is(err, pair.ErrWrongCode):
 		return "the codes did not match. Check the words with the other person and try again with a new code."
 	}

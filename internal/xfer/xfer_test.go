@@ -49,7 +49,7 @@ func transfer(t *testing.T, ctx context.Context, src, dest string, onProgress Pr
 		}
 		done <- result{s, err}
 	}()
-	_, sendErr = Send(context.Background(), a, src, m, nil)
+	_, sendErr = Send(context.Background(), a, src, m, nil, nil)
 	return sendErr, <-done
 }
 

@@ -116,9 +116,19 @@ Control messages on `ctl` are JSON objects with a `t` field:
 | `files` | sender | up to 2000 manifest entries `{path,size,mode,dir,mtime}` |
 | `accept` / `decline` | receiver | `done`: indexes it already holds; `partial`: index → base64 bitmap of pieces held |
 | `end-file` | sender | index and whole-file BLAKE3-256 (hex) |
-| `progress` | receiver | bytes held |
+| `progress` | receiver | bytes held, every 250 ms |
+| `alive` | sender | nothing; sent every 2 s while a resume reads pieces the receiver already holds |
 | `complete` | receiver | ok, saved name, or reason |
+| `cancel` | either | reason |
 | `bye` | sender | the receiver may hang up |
+
+Both sides keep a watchdog. The sender stops if the receiver has not
+answered an offer in 2 minutes, has said nothing for 60 s, or holds no
+more bytes than it did 60 s ago (reads of already-held pieces count as
+movement). The receiver stops if nothing, data or `alive`, has arrived for
+2 minutes, and tells the sender why in a `cancel`. Either way the error
+wraps `ErrStalled`, the command exits 5, and what arrived is kept for a
+resume.
 
 A piece on a data lane is `0x01 ‖ file index (u32) ‖ offset (u64) ‖
 BLAKE3-128(data) ‖ data`, all big-endian, with 256 KiB of data except at

@@ -123,7 +123,8 @@ it. With `ferry up` running here, pipes go through it.
 4. **Moving data.** The transfer is split across several connections at
    once (one alone recovers slowly from loss on long paths). Each piece
    carries a BLAKE3 hash and each file is hashed whole; nothing gets its
-   real name until it matches.
+   real name until it matches. If no bytes move for a minute, both sides
+   stop and say why; the same command resumes.
 
 Pairing does the same once and then swaps long-term keys. Later sessions
 between contacts authenticate with those keys instead of a code.

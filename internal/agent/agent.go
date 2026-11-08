@@ -35,7 +35,9 @@ type API interface {
 	Send(ctx context.Context, req SendRequest) (*SendResult, error)
 	Inbox(ctx context.Context, since int64, from string) (*InboxResult, error)
 	Wait(ctx context.Context, from string, since int64, timeout time.Duration) (*msg.Record, error)
-	SendFile(ctx context.Context, to, path string, progress xfer.Progress) (*FileResult, error)
+	// SendFile sends a file or folder to a contact. progress hears bytes
+	// the contact holds; status, each change of phase. Either may be nil.
+	SendFile(ctx context.Context, to, path string, progress xfer.Progress, status xfer.Status) (*FileResult, error)
 	Files(ctx context.Context, since int64) ([]Received, error)
 	Close() error
 }
@@ -567,7 +569,12 @@ func (a *Local) Wait(ctx context.Context, from string, since int64, timeout time
 	}
 }
 
-func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Progress) (*FileResult, error) {
+func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Progress, status xfer.Status) (*FileResult, error) {
+	say := func(f string, args ...any) {
+		if status != nil {
+			status(fmt.Sprintf(f, args...))
+		}
+	}
 	c, err := contact(to)
 	if err != nil {
 		return nil, err
@@ -579,10 +586,12 @@ func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Pro
 	if _, err := os.Stat(abs); err != nil {
 		return nil, err
 	}
+	say("listing files")
 	m, err := xfer.Scan(abs)
 	if err != nil {
 		return nil, err
 	}
+	say("connecting to %s", c.Name)
 	ep, err := a.online(ctx)
 	if err != nil {
 		return nil, err
@@ -592,26 +601,59 @@ func (a *Local) SendFile(ctx context.Context, to, path string, progress xfer.Pro
 		return nil, err
 	}
 	defer s.Close()
-	if err := s.Conn.SendJSON(session.Intent{Want: "files"}); err != nil {
-		return nil, err
-	}
-	var r session.IntentReply
-	if err := s.Conn.RecvJSON(&r); err != nil {
-		return nil, err
+	say("asking %s to take it", c.Name)
+	r, err := askFiles(ctx, s, intentWait)
+	if err != nil {
+		return nil, fmt.Errorf("%s did not answer: %w", c.Name, err)
 	}
 	if !r.OK {
 		return nil, fmt.Errorf("%w: %s says: %s", session.ErrDeclined, c.Name, r.Why)
 	}
+	say("opening a direct link to %s", c.Name)
 	l, err := s.Link(ctx, a.cfg.LanesFor(m.Total))
 	if err != nil {
 		return nil, err
 	}
 	defer l.Close()
 	t0 := time.Now()
-	if _, err := xfer.Send(ctx, l, abs, m, progress); err != nil {
+	st := func(what string) {
+		if what == xfer.StatusAccept {
+			what = "waiting for " + c.Name + " to accept"
+		}
+		say("%s", what)
+	}
+	if _, err := xfer.Send(ctx, l, abs, m, progress, st); err != nil {
 		return nil, err
 	}
 	return &FileResult{Name: m.Name, Bytes: m.Total, Seconds: time.Since(t0).Seconds(), Path: l.Path}, nil
+}
+
+// intentWait is how long a contact may take to say whether it takes a
+// transfer. Its agent answers at once; silence means it is stuck.
+var intentWait = 30 * time.Second
+
+// askFiles asks the contact on s to take files and waits, at most d, for
+// its answer.
+func askFiles(ctx context.Context, s *session.Session, d time.Duration) (*session.IntentReply, error) {
+	if err := s.Conn.SendJSON(session.Intent{Want: "files"}); err != nil {
+		return nil, err
+	}
+	got := make(chan error, 1)
+	var r session.IntentReply
+	go func() { got <- s.Conn.RecvJSON(&r) }()
+	select {
+	case err := <-got:
+		if err != nil {
+			return nil, err
+		}
+		return &r, nil
+	case <-time.After(d):
+		s.Close()
+		return nil, fmt.Errorf("%w: no reply in %s", ErrTimeout, d)
+	case <-ctx.Done():
+		s.Close()
+		return nil, ctx.Err()
+	}
 }
 
 func (a *Local) Files(ctx context.Context, since int64) ([]Received, error) {

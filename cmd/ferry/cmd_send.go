@@ -83,9 +83,14 @@ func sendToContact(ctx context.Context, o *out, to, path string, m *xfer.Manifes
 		return err
 	}
 	defer a.Close()
-	o.say("Sending %s to %s.", describe(m), to)
+	via := ""
+	if _, bg := a.(*agent.Remote); bg {
+		// The background agent reads the files, not this process.
+		via = o.dim(" (through `ferry up`)")
+	}
+	o.say("Sending %s to %s%s.", describe(m), to, via)
 	p := o.progress("↑", m.Total)
-	r, err := a.SendFile(ctx, to, path, p.update)
+	r, err := a.SendFile(ctx, to, path, p.update, p.status)
 	p.end()
 	if err != nil {
 		return err
@@ -96,14 +101,16 @@ func sendToContact(ctx context.Context, o *out, to, path string, m *xfer.Manifes
 }
 
 func sendOver(ctx context.Context, o *out, s *session.Session, path string, m *xfer.Manifest, lanes int) error {
+	p := o.progress("↑", m.Total)
+	p.status("opening a direct link")
 	l, err := s.Link(ctx, lanes)
 	if err != nil {
+		p.end()
 		return err
 	}
 	defer l.Close()
 	o.event("connected", map[string]any{"path": l.Path, "lanes": len(l.Lanes)})
-	p := o.progress("↑", m.Total)
-	saved, err := xfer.Send(ctx, l, path, m, p.update)
+	saved, err := xfer.Send(ctx, l, path, m, p.update, p.status)
 	p.end()
 	if err != nil {
 		return err

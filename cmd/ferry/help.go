@@ -92,7 +92,7 @@ const exitCodesHelp = `ferry exit codes:
   2  usage: a command or flag was wrong
   3  authentication: wrong code, or a contact's key changed
   4  offline: the contact or the rendezvous could not be reached
-  5  timeout: nothing happened in time (ferry wait)
+  5  timeout: nothing happened in time (ferry wait), or a transfer stalled
   6  integrity: data failed a hash check
   7  declined: the other side said no
 130  interrupted
@@ -125,6 +125,9 @@ FILES
                                     {"event":"done",...} when they confirm.
   ferry get <code> [--to dir] --json  {"event":"done","saved":"/abs/path","verified":true}
   ferry send <contact> <path>       to a paired contact who is online
+  While waiting, --json writes {"event":"status","status":"..."} to stderr;
+  then "progress" events. If no bytes move for 60s, the send stops with
+  exit 5 and says why; the same command again resumes where it stopped.
   ferry files --json                files contacts sent here (while up)
 
 MESSAGES

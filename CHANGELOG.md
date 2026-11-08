@@ -19,8 +19,20 @@ exit codes are part of the public interface.
 - With `ferry up` running, `ferry pipe` goes through it instead of joining
   the rendezvous a second time under the same identity.
 
+- Sends say what they are waiting on before bytes flow (connecting,
+  waiting for the contact to accept, opening a direct link), and keep
+  printing while nothing moves: "nothing moved for 40s". With `--json`
+  these are `status` events on stderr.
+- A watchdog on both sides: a transfer that moves no bytes for 60 s, or
+  hears nothing from the other side, stops and says why, exiting 5. What
+  arrived is kept; the same command resumes.
+
 ### Changed
 
+- A send to a contact through `ferry up` says so. The agent reads the
+  files, not the command, so the command's own process shows no disk
+  reads; that, with output piped into `tail`, once made a working 40 GB
+  send look stuck.
 - The rendezvous in `deploy/fly` caps every relayed circuit at 1 MiB and
   2 minutes (Concord v0.59.1): it carries signaling only, never data.
 - Lending a machine (`join`, `shell`, `bring`, `take`, `ports`, `leave`)
