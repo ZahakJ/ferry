@@ -675,15 +675,46 @@ func (h *handles) closeAll() {
 	}
 }
 
-// rootName is the name the transfer gets in dest. A name starting with a
-// dot (.git, .envrc, .vscode) could change how tools behave in that
-// folder, so it is saved under a plain name instead.
-func rootName(name string) string {
+// rootName is the name the transfer gets in dest.
+func rootName(name string) string { return SavedName(name) }
+
+// SavedName is the name one part of a received path is saved under. A
+// name starting with a dot (.git, .envrc, .vscode, .claude) can change how
+// tools behave in the folder that holds it, and an agent instruction file
+// (CLAUDE.md, AGENTS.md) is read as instructions by a coding agent working
+// there; neither keeps its name, at any depth: .git becomes dot-git and
+// CLAUDE.md becomes received-CLAUDE.md. Every other name is kept.
+func SavedName(name string) string {
 	if strings.HasPrefix(name, ".") {
 		return "dot-" + strings.TrimLeft(name, ".")
 	}
+	switch strings.ToLower(name) {
+	case "claude.md", "claude.local.md", "agents.md", "gemini.md":
+		return "received-" + name
+	}
 	return name
 }
+
+// savedPath applies SavedName to every part of a manifest path.
+func savedPath(p string) string {
+	parts := strings.Split(p, "/")
+	for i, part := range parts {
+		parts[i] = SavedName(part)
+	}
+	return strings.Join(parts, "/")
+}
+
+// A ReceiveOption changes how Receive saves what arrives.
+type ReceiveOption func(*receiveOptions)
+
+type receiveOptions struct{ asSent bool }
+
+// AsSent saves the files inside a received folder under the names the
+// sender gave them and keeps their execute bits. Without it, nested names
+// are changed as SavedName says and no received file is executable. The
+// top-level name is changed either way. For a person receiving a project
+// they mean to work in (`ferry get --as-sent`); never for the agent.
+func AsSent() ReceiveOption { return func(o *receiveOptions) { o.asSent = true } }
 
 // ErrNoRoom means the destination has too little free space.
 var ErrNoRoom = errors.New("not enough free space")
@@ -692,10 +723,30 @@ var ErrNoRoom = errors.New("not enough free space")
 // earlier attempt at the same transfer. It returns the saved path; onSaved,
 // if set, hears it as soon as the files are in place, a moment before
 // Receive returns.
-func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress Progress, onSaved func(path string)) (string, error) {
+func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress Progress, onSaved func(path string), opts ...ReceiveOption) (string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	var opt receiveOptions
+	for _, f := range opts {
+		f(&opt)
+	}
 	m := o.Manifest
+	// Names as they will be saved. Renaming could make two names one
+	// (.git and dot-git); such an offer is refused, not merged.
+	saveAs := make([]string, len(m.Files))
+	seen := map[string]bool{}
+	for i, f := range m.Files {
+		saveAs[i] = f.Path
+		if !opt.asSent {
+			saveAs[i] = savedPath(f.Path)
+		}
+		k := strings.ToLower(saveAs[i])
+		if seen[k] {
+			Decline(l, "two names in this transfer would be saved as one: "+saveAs[i])
+			return "", fmt.Errorf("two names in the offer would be saved as one: %s", saveAs[i])
+		}
+		seen[k] = true
+	}
 	if err := os.MkdirAll(dest, 0o755); err != nil {
 		return "", err
 	}
@@ -714,7 +765,7 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 	for i, f := range m.Files {
 		final := rootPath
 		if !single {
-			final = filepath.Join(rootPath, filepath.FromSlash(f.Path))
+			final = filepath.Join(rootPath, filepath.FromSlash(saveAs[i]))
 		}
 		rf := &rfile{f: f, final: final, part: final + ".ferry-part", pieces: f.Pieces(), hash: make(chan string, 1)}
 		files[i] = rf
@@ -972,7 +1023,7 @@ func Receive(ctx context.Context, l *link.Link, o *Offer, dest string, progress 
 			if err := os.Rename(rf.part, rf.final); err != nil {
 				return "", err
 			}
-			os.Chmod(rf.final, safeMode(rf.f.Mode))
+			os.Chmod(rf.final, fileMode(rf.f.Mode, opt.asSent))
 			mt := time.Unix(rf.f.MTime, 0)
 			os.Chtimes(rf.final, mt, mt)
 			st.Done[r.i] = "ok"
@@ -1041,6 +1092,15 @@ var ErrIntegrity = errors.New("integrity check failed")
 // safeMode keeps permission bits but never setuid, setgid or sticky, and
 // never write access for others.
 func safeMode(m os.FileMode) os.FileMode { return m.Perm() &^ 0o002 }
+
+// fileMode is the mode a received file gets: safeMode, and no execute bit
+// unless the receiver asked for the files as sent.
+func fileMode(m os.FileMode, asSent bool) os.FileMode {
+	if asSent {
+		return safeMode(m)
+	}
+	return safeMode(m) &^ 0o111
+}
 
 // ErrDeclined means the receiver refused the offer.
 var ErrDeclined = errors.New("declined")

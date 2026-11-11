@@ -52,7 +52,11 @@ Interrupted? Run the same command again; it resumes from what arrived.`,
   ferry get 7-acorn-tulip-otter --to ~/Downloads
   ferry get --from ana                 wait for a paired contact to send
 A name that is taken gets a suffix (photos-2/). Partial data is kept and
-resumed when the same files are sent again.`,
+resumed when the same files are sent again.
+Names that tools or coding agents act on are saved under plain names at any
+depth (.git as dot-git, CLAUDE.md as received-CLAUDE.md), and no received
+file is executable. --as-sent keeps both as the sender had them, inside the
+folder; use it only for a project from someone you trust.`,
 	"pair": `
   ferry pair                  print a code for the other person
   ferry pair 7-acorn-tulip-otter --name sam

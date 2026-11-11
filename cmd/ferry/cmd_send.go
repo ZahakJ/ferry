@@ -139,6 +139,7 @@ func cmdGet(ctx context.Context, o *out, args []string) error {
 	fs := flag.NewFlagSet("get", flag.ContinueOnError)
 	dest := fs.String("to", ".", "folder to save into")
 	from := fs.String("from", "", "only accept from this contact")
+	asSent := fs.Bool("as-sent", false, "keep the names inside a received folder (.git, .envrc, CLAUDE.md...) and execute bits as sent")
 	pos, err := parse(fs, args)
 	if err != nil {
 		return err
@@ -158,21 +159,29 @@ func cmdGet(ctx context.Context, o *out, args []string) error {
 		}
 		defer s.Close()
 		o.say("Connected. %s", o.dim("(both sides see: "+s.SAS+")"))
-		return receiveOver(ctx, o, s, *dest, 0)
+		return receiveOver(ctx, o, s, *dest, 0, receiveOpts(*asSent)...)
 	}
-	return getFromContact(ctx, o, cfg, *from, *dest, 0)
+	return getFromContact(ctx, o, cfg, *from, *dest, 0, receiveOpts(*asSent)...)
 }
 
-func receiveOver(ctx context.Context, o *out, s *session.Session, dest string, lanes int) error {
+// receiveOpts turns `ferry get --as-sent` into the receive option.
+func receiveOpts(asSent bool) []xfer.ReceiveOption {
+	if asSent {
+		return []xfer.ReceiveOption{xfer.AsSent()}
+	}
+	return nil
+}
+
+func receiveOver(ctx context.Context, o *out, s *session.Session, dest string, lanes int, opts ...xfer.ReceiveOption) error {
 	l, err := s.Link(ctx, lanes)
 	if err != nil {
 		return err
 	}
 	defer l.Close()
-	return receiveOnLink(ctx, o, l, dest)
+	return receiveOnLink(ctx, o, l, dest, opts...)
 }
 
-func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error {
+func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string, opts ...xfer.ReceiveOption) error {
 	offer, err := xfer.ReadOffer(l)
 	if err != nil {
 		return err
@@ -181,7 +190,7 @@ func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error
 	o.say("Receiving %s.", describe(m))
 	o.event("offer", map[string]any{"name": m.Name, "bytes": m.Total, "files": countFiles(m), "path": l.Path})
 	p := o.progress("↓", m.Total)
-	saved, err := xfer.Receive(ctx, l, offer, dest, p.update, nil)
+	saved, err := xfer.Receive(ctx, l, offer, dest, p.update, nil, opts...)
 	p.end()
 	if err != nil {
 		if ctx.Err() == nil && !errors.Is(err, xfer.ErrIntegrity) && !errors.Is(err, xfer.ErrNoRoom) {
@@ -200,7 +209,7 @@ func receiveOnLink(ctx context.Context, o *out, l *link.Link, dest string) error
 	return nil
 }
 
-func getFromContact(ctx context.Context, o *out, cfg *session.Config, from, dest string, lanes int) error {
+func getFromContact(ctx context.Context, o *out, cfg *session.Config, from, dest string, lanes int, opts ...xfer.ReceiveOption) error {
 	if agent.Running() {
 		return usagef("`ferry up` is running, and it already receives files from contacts into %s; see them with `ferry files`", agent.FilesDir())
 	}
@@ -242,7 +251,7 @@ func getFromContact(ctx context.Context, o *out, cfg *session.Config, from, dest
 		}
 		s.Conn.SendJSON(session.IntentReply{OK: true})
 		o.say("%s is sending.", c.Name)
-		done <- got{receiveOver(ctx, o, s, dest, lanes)}
+		done <- got{receiveOver(ctx, o, s, dest, lanes, opts...)}
 	})
 	if err != nil {
 		return fmt.Errorf("%w: %v", errUnreachable, err)

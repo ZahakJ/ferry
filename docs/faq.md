@@ -69,7 +69,10 @@ starting it at login.
 ### Will ferry run something a contact sends me?
 
 Never. ferry stores messages and files; it does not open or execute
-them. Fetched files lose their execute bit.
+them. Received files lose their execute bit, and names that tools act on
+(`.git`, `.envrc`, `CLAUDE.md`) are saved under plain names
+(`dot-git`, `dot-envrc`, `received-CLAUDE.md`) at any depth.
+`ferry get --as-sent` keeps both for a project from someone you trust.
 
 ### Where does ferry keep its data?
 

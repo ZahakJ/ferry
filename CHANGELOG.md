@@ -27,6 +27,17 @@ exit codes are part of the public interface.
   hears nothing from the other side, stops and says why, exiting 5. What
   arrived is kept; the same command resumes.
 
+### Security
+
+- Inside a received folder, at any depth, names that tools or coding
+  agents act on are saved under plain names: `.git` as `dot-git`, any
+  other dot-name likewise, `CLAUDE.md`/`AGENTS.md` as `received-…`.
+  Before, only the top-level name was changed. `fetch_file` applies the
+  same to what it copies, including files received earlier.
+- Received files are saved without their execute bit. `ferry get
+  --as-sent` keeps nested names and execute bits for a trusted project;
+  the agent and the MCP server never do. SECURITY.md now says exactly this.
+
 ### Changed
 
 - A send to a contact through `ferry up` says so. The agent reads the

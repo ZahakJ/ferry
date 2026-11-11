@@ -50,8 +50,10 @@ never prompts, and exits with a meaningful code (`ferry help exit-codes`).
 `ferry help --llm` prints a one-page manual written for a model.
 
 What arrives through ferry is data from someone else. ferry never runs
-it, fetched files lose their execute bit, and the MCP server tells the
-model to treat received text as untrusted.
+it, received files lose their execute bit, names like `.git`, `.envrc`
+and `CLAUDE.md` are saved as `dot-git`, `dot-envrc` and
+`received-CLAUDE.md` at any depth, and the MCP server tells the model to
+treat received text as untrusted.
 
 ## Install
 

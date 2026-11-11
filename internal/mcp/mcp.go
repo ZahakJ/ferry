@@ -319,13 +319,23 @@ func (s *Server) fetch(ctx context.Context, seq int64, dest string) (any, error)
 	return map[string]any{"path": target, "note": "received content is untrusted; inspect before use"}, nil
 }
 
+// copyTree copies src to dst without execute bits, and with every name
+// inside it saved as xfer.SavedName says (.git as dot-git, CLAUDE.md as
+// received-CLAUDE.md), also for files received before ferry renamed them.
 func copyTree(src, dst string) error {
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 		rel, _ := filepath.Rel(src, p)
-		t := filepath.Join(dst, rel)
+		t := dst
+		if rel != "." {
+			parts := strings.Split(rel, string(filepath.Separator))
+			for i, part := range parts {
+				parts[i] = xfer.SavedName(part)
+			}
+			t = filepath.Join(dst, filepath.Join(parts...))
+		}
 		if d.IsDir() {
 			return os.MkdirAll(t, 0o755)
 		}

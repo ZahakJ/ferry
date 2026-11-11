@@ -56,11 +56,16 @@ default, granted per port, never to anyone unpaired, and every pipe opened
 or refused is logged by `ferry up`. Whatever listens on an allowed port
 (sshd, say) does its own authentication, and what a contact can do through
 it is what that service allows. ferry never
-executes received content; fetched files lose their execute bit and are
-named `ferry-<n>-<name>`, and a received folder named like `.git` or
-`.envrc` is saved as `dot-git`, so nothing lands where a tool would act on
-it by name; a contact can run one transfer at a time, and only if the
-files fit in the free space; the MCP
+executes received content. Received files are saved without their execute
+bit, and every name in a received folder that tools or coding agents act
+on is saved under a plain name, at any depth: `.git` as `dot-git`,
+`.envrc` as `dot-envrc`, `CLAUDE.md` and `AGENTS.md` as
+`received-CLAUDE.md` and `received-AGENTS.md`. So nothing lands where a
+tool would act on it by name. A person receiving a project from someone
+they trust can keep the names and execute bits inside the folder with
+`ferry get --as-sent`; the agent (`ferry up`) and the MCP server never do.
+Fetched files are named `ferry-<n>-<name>`. A contact can run one
+transfer at a time, and only if the files fit in the free space; the MCP
 server tells the model that received text is untrusted and is not to be
 followed without the user's consent. A future job runner (running
 commands on request) will be off by default and need a per-contact

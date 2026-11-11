@@ -190,3 +190,105 @@ func TestManyFiles(t *testing.T) {
 		t.Fatal(string(got), err)
 	}
 }
+
+// transferAs is transfer with receive options.
+func transferAs(t *testing.T, src, dest string, opts ...ReceiveOption) (sendErr error, recv result) {
+	a, b := linktest.Pair(t, link.Options{Lanes: 2})
+	m, err := Scan(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan result)
+	go func() {
+		o, err := ReadOffer(b)
+		if err != nil {
+			done <- result{err: err}
+			return
+		}
+		s, err := Receive(context.Background(), b, o, dest, nil, nil, opts...)
+		if err != nil {
+			b.Close()
+		}
+		done <- result{s, err}
+	}()
+	_, sendErr = Send(context.Background(), a, src, m, nil, nil)
+	return sendErr, <-done
+}
+
+// A folder from a contact can hold files that tools and coding agents act
+// on by name, at any depth. None of them keeps its name, and nothing
+// received is executable, unless the receiver asks for the files as sent.
+func TestNestedControlFilesRenamed(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "proj")
+	for _, p := range []string{"main.go", ".git/config", ".git/hooks/pre-commit", ".claude/settings.json", ".envrc", ".vscode/tasks.json", "CLAUDE.md", "sub/AGENTS.md", "sub/.envrc"} {
+		writeRandom(t, filepath.Join(src, filepath.FromSlash(p)), 10)
+	}
+	os.Chmod(filepath.Join(src, ".git", "hooks", "pre-commit"), 0o755)
+	os.Chmod(filepath.Join(src, "main.go"), 0o755)
+
+	dest := t.TempDir()
+	if err, r := transferAs(t, src, dest); err != nil || r.err != nil {
+		t.Fatal(err, r.err)
+	}
+	root := filepath.Join(dest, "proj")
+	for _, p := range []string{".git", ".claude", ".envrc", ".vscode", "CLAUDE.md", "sub/AGENTS.md", "sub/.envrc"} {
+		if _, err := os.Lstat(filepath.Join(root, filepath.FromSlash(p))); err == nil {
+			t.Errorf("%s was saved under its own name", p)
+		}
+	}
+	for _, p := range []string{"main.go", "dot-git/config", "dot-git/hooks/pre-commit", "dot-claude/settings.json", "dot-envrc", "dot-vscode/tasks.json", "received-CLAUDE.md", "sub/received-AGENTS.md", "sub/dot-envrc"} {
+		st, err := os.Stat(filepath.Join(root, filepath.FromSlash(p)))
+		if err != nil {
+			t.Errorf("%s: %v", p, err)
+			continue
+		}
+		if st.Mode().Perm()&0o111 != 0 {
+			t.Errorf("%s is executable: %v", p, st.Mode())
+		}
+	}
+	if st, err := os.Stat(filepath.Join(root, "dot-git", "hooks")); err != nil || st.Mode().Perm()&0o700 != 0o700 {
+		t.Errorf("folders stay usable: %v %v", st, err)
+	}
+
+	// --as-sent: names and execute bits as the sender had them (the top
+	// level is still renamed, which this folder does not need).
+	dest = t.TempDir()
+	if err, r := transferAs(t, src, dest, AsSent()); err != nil || r.err != nil {
+		t.Fatal(err, r.err)
+	}
+	root = filepath.Join(dest, "proj")
+	for _, p := range []string{".git/config", ".claude/settings.json", ".envrc", "CLAUDE.md", "sub/AGENTS.md"} {
+		if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(p))); err != nil {
+			t.Errorf("as sent: %s: %v", p, err)
+		}
+	}
+	if st, err := os.Stat(filepath.Join(root, ".git", "hooks", "pre-commit")); err != nil || st.Mode().Perm()&0o100 == 0 {
+		t.Errorf("as sent: the execute bit was dropped: %v %v", st, err)
+	}
+}
+
+// .git and dot-git in one folder would both be saved as dot-git: refused.
+func TestRenamedNamesCollide(t *testing.T) {
+	src := filepath.Join(t.TempDir(), "proj")
+	writeRandom(t, filepath.Join(src, ".git", "config"), 10)
+	writeRandom(t, filepath.Join(src, "dot-git", "config"), 10)
+	dest := t.TempDir()
+	_, r := transferAs(t, src, dest)
+	if r.err == nil || !strings.Contains(r.err.Error(), "saved as one") {
+		t.Fatal("expected a refusal, got", r.err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "proj")); err == nil {
+		t.Fatal("a refused transfer left files behind")
+	}
+}
+
+func TestSavedName(t *testing.T) {
+	for in, want := range map[string]string{
+		".git": "dot-git", "..env": "dot-env", "CLAUDE.md": "received-CLAUDE.md", "claude.md": "received-claude.md",
+		"AGENTS.md": "received-AGENTS.md", "CLAUDE.local.md": "received-CLAUDE.local.md", "README.md": "README.md", "dot-git": "dot-git",
+	} {
+		if got := SavedName(in); got != want {
+			t.Errorf("SavedName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

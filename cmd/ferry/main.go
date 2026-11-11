@@ -33,7 +33,7 @@ var commands []command
 func init() {
 	commands = []command{
 		{"send", "[contact] <path>", "send a file or folder; prints a code unless a contact is named", cmdSend},
-		{"get", "[code] [--to dir]", "receive with a code, or from a contact", cmdGet},
+		{"get", "[code] [--to dir] [--as-sent]", "receive with a code, or from a contact", cmdGet},
 		{"pair", "[code] [--name name]", "pair with someone once, so later sends need no code", cmdPair},
 		{"msg", "<contact> \"text\"", "send a message (pipe text in for long ones)", cmdMsg},
 		{"inbox", "[--since n] [--from contact]", "show messages", cmdInbox},
