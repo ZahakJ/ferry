@@ -157,8 +157,11 @@ func TestReceiverStall(t *testing.T) {
 
 // A watchdog this impatient must still leave healthy transfers alone,
 // including a resume, where the sender reads pieces it does not send.
+// The receiver reports progress every 250ms and fsyncs a checkpoint
+// between reports, so the window must sit well above that cadence or a
+// busy machine reads as a stall.
 func TestNoFalseStall(t *testing.T) {
-	quick(t, 300*time.Millisecond)
+	quick(t, 2*time.Second)
 	src := filepath.Join(t.TempDir(), "data.bin")
 	writeRandom(t, src, 200*PieceSize)
 	dest := t.TempDir()
